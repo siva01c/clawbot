@@ -1,0 +1,9 @@
+.history
+.env
+.ddev/*
+.vscode
+tmp/*
+openclaw/identity/
+openclaw/workspace/.openclaw/
+.DS_Store
+# Test caches

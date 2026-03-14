@@ -1,0 +1,47 @@
+services:
+  openclaw:
+    image: clawbot-openclaw:latest
+    build:
+      context: .
+      dockerfile: docker/openclaw/Dockerfile
+      args:
+        - TARGET_ENV=${TARGET_ENV:-dev}
+    env_file:
+      - .env
+    volumes:
+      - ./openclaw:/openclaw-src:ro
+      - ./openclaw/workspace:/root/.openclaw/workspace
+      - ./AGENTS.md:/root/.openclaw/workspace/AGENTS.md:ro
+    ports:
+      - "${OPENCLAW_PORT:-18789}:18789"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:12434
+      - DMR_BASE_URL=http://host.docker.internal:12434/engines/v1
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - openclaw-sandbox-browser
+    networks:
+      - clawbot
+
+  openclaw-sandbox-browser:
+    image: browserless/chrome:latest
+    ports:
+      - "9222:9222"
+    environment:
+      - CONNECTION_TIMEOUT=600000
+      - MAX_CONCURRENT_SESSIONS=10
+      - PREBOOT_CHROME=true
+      - ENABLE_DEBUGGER=true
+    shm_size: 2gb
+    networks:
+      - clawbot
+
+
+networks:
+  clawbot:
+    driver: bridge
+  nginx-proxy:
+    external: true

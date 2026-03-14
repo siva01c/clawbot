@@ -1,0 +1,25 @@
+# GPU override — merge with docker-compose.yml to enable NVIDIA GPU support.
+#
+# Prerequisites (Linux / WSL2):
+#   sudo apt-get install -y nvidia-container-toolkit
+#   sudo nvidia-ctk runtime configure --runtime=docker
+#   sudo systemctl restart docker
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile full up -d
+#
+# After enabling GPU, switch openclaw.json primary model to gpt-oss-vllm:
+#   "primary": "dmr/gpt-oss-vllm", "fallbacks": ["dmr/llama3.2"]
+
+services:
+  openclaw:
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
