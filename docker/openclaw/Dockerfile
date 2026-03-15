@@ -6,28 +6,31 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
-        git && \
+        git \
+        python3 \
+        python3-pip \
+        python3-venv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g openclaw@latest
+# Install global npm packages
+RUN npm install -g openclaw@latest clawhub@latest && \
+    npx skills add vercel-labs/agent-skills
 
 RUN mkdir -p /root/.openclaw
+COPY openclaw/openclaw.json /root/.openclaw/openclaw.json
+COPY openclaw/extensions/ /root/.openclaw/extensions/
 COPY docker/openclaw/start.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 
 # Development stage
 FROM base AS dev
-COPY openclaw/openclaw.json /root/.openclaw/openclaw.json
-COPY openclaw/extensions/ /root/.openclaw/extensions/
 VOLUME /root/.openclaw
 EXPOSE 18789
 CMD ["/usr/local/bin/start-openclaw.sh"]
 
 # Production stage
 FROM base AS production
-COPY openclaw/openclaw.json /root/.openclaw/openclaw.json
-COPY openclaw/extensions/ /root/.openclaw/extensions/
 RUN chmod 700 ~/.openclaw && chmod 600 /root/.openclaw/openclaw.json
 EXPOSE 18789
 CMD ["/usr/local/bin/start-openclaw.sh"]
