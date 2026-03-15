@@ -28,8 +28,6 @@ services:
 
   openclaw-sandbox-browser:
     image: browserless/chrome:latest
-    ports:
-      - "9222:9222"
     environment:
       - CONNECTION_TIMEOUT=600000
       - MAX_CONCURRENT_SESSIONS=10
