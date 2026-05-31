@@ -12,10 +12,11 @@ services:
       - ./openclaw:/openclaw-src:ro
       - ./openclaw/workspace:/root/.openclaw/workspace
       - ./AGENTS.md:/root/.openclaw/workspace/AGENTS.md:ro
+      - ../ludekkvapil:/site
     ports:
       - "${OPENCLAW_PORT:-18789}:18789"
     environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:12434
+      - OLLAMA_BASE_URL=http://ollama:11434
       - DMR_BASE_URL=http://host.docker.internal:12434/engines/v1
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
       - OPENAI_API_KEY=${OPENAI_API_KEY}

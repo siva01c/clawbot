@@ -1,3 +1,11 @@
 {
-  "servers": {}
+  "servers": {
+    "ragchat": {
+      "url": "http://ragchat-nginx-1:8080/mcp/post",
+      "transport": "streamable-http",
+      "headers": {
+        "Authorization": "Basic ${DRUPAL_MCP_TOKEN}"
+      }
+    }
+  }
 }

@@ -9,7 +9,8 @@ RUN apt-get update && \
         git \
         python3 \
         python3-pip \
-        python3-venv && \
+        python3-venv \
+        hugo && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -39,4 +40,4 @@ CMD ["/usr/local/bin/start-openclaw.sh"]
 FROM ${TARGET_ENV:-production} AS final
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:18789/ || exit 1
+    CMD curl -f http://$(hostname -i):18789/ || exit 1
