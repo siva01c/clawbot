@@ -44,6 +44,7 @@ All variables are defined in `.env.default`. Copy it to `.env` and fill in real 
 | `OPENAI_API_KEY` | Yes* | — | OpenAI API key |
 | `OPENCLAW_GATEWAY_TOKEN` | Yes | — | Secret token for gateway auth |
 | `OPENCLAW_PORT` | No | `18789` | Host port for the gateway |
+| `HUGO_DEV_PORT` | No | `1313` | Host port mapped to Hugo dev server |
 | `TARGET_ENV` | No | `dev` | Build stage (`dev` or `production`) |
 | `LINKEDIN_USER` | Yes (scrape) | — | LinkedIn login username/email |
 | `LINKEDIN_PASSWORD` | Yes (scrape) | — | LinkedIn login password |
@@ -70,6 +71,33 @@ docker compose exec -T openclaw openclaw dashboard --no-open 2>&1 | grep "http:/
 Or check container logs — the URL is printed automatically on startup:
 ```bash
 docker compose logs openclaw | grep "http://"
+```
+
+OpenClaw runtime state, including session history, is stored in the named Docker volume `openclaw-runtime` mounted at `/root/.openclaw`. Use `docker compose restart openclaw` for normal restarts. Avoid `docker compose down -v` if you want to keep session history.
+
+---
+
+## Hugo Site Access (OpenClaw + Browser)
+
+The Hugo project is mounted into containers at `/site`.
+
+- OpenClaw to Hugo dev URL (internal Docker DNS): `http://hugo:1313`
+- Local browser to Hugo dev URL (host mapping): `http://localhost:<HUGO_DEV_PORT>/`
+- The Hugo dev server runs as the `hugo` service in this Compose stack.
+
+Run the Hugo dev server service:
+```bash
+docker compose up -d hugo
+```
+
+Run Hugo production build from OpenClaw container:
+```bash
+docker compose exec openclaw sh -c 'cd /site && hugo --minify --gc'
+```
+
+Quick connectivity check from OpenClaw to Hugo dev server:
+```bash
+docker compose exec openclaw sh -c 'curl -sI http://hugo:1313 | head -n 1'
 ```
 
 ---

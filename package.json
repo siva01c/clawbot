@@ -1,0 +1,10 @@
+{
+  "name": "clawbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenClaw agent gateway dependencies — versions pinned here, installed at image build time.",
+  "dependencies": {
+    "openclaw": "2026.5.28",
+    "clawhub": "0.18.0"
+  }
+}

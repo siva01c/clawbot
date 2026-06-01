@@ -1,4 +1,20 @@
 services:
+  hugo:
+    image: clawbot-openclaw:latest
+    build:
+      context: .
+      dockerfile: docker/openclaw/Dockerfile
+      args:
+        - TARGET_ENV=${TARGET_ENV:-dev}
+    working_dir: /site
+    command: ["sh", "-c", "hugo server -D --bind 0.0.0.0 --port 1313"]
+    volumes:
+      - ../ludekkvapil:/site
+    ports:
+      - "${HUGO_DEV_PORT:-1313}:1313"
+    networks:
+      - clawbot
+
   openclaw:
     image: clawbot-openclaw:latest
     build:
@@ -9,6 +25,7 @@ services:
     env_file:
       - .env
     volumes:
+      - openclaw-runtime:/root/.openclaw
       - ./openclaw:/openclaw-src:ro
       - ./openclaw/workspace:/root/.openclaw/workspace
       - ./AGENTS.md:/root/.openclaw/workspace/AGENTS.md:ro
@@ -23,6 +40,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
+      - hugo
       - openclaw-sandbox-browser
       - mcp
     networks:
@@ -98,3 +116,6 @@ networks:
     driver: bridge
   agentic-ops:
     external: true
+
+volumes:
+  openclaw-runtime:

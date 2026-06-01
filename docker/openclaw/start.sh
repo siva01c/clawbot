@@ -1,9 +1,6 @@
 #!/bin/sh
 set -eu
 
-echo "Updating openclaw to latest..."
-npm install -g openclaw@latest
-
 SRC_DIR="/openclaw-src"
 RUNTIME_DIR="/root/.openclaw"
 GATEWAY_URL="ws://127.0.0.1:18789"

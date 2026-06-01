@@ -13,6 +13,8 @@ description: >-
 # Hugo Site Editor Skill
 
 Direct read-write access to the `ludekkvapil.cz` Hugo source at `/site`.
+When running inside OpenClaw, use the Hugo dev service at `http://hugo:1313` for live preview and content checks.
+When using the host browser, use `http://localhost:1313` (or the mapped `HUGO_DEV_PORT`).
 After any edit, rebuild with `hugo --minify --gc` to publish changes.
 
 ## Site Structure
@@ -84,6 +86,8 @@ icon: "robot"                 # theme-specific icon name
 > Hugo binary is available inside the container at `/usr/bin/hugo`.
 > Build command (run inside container or note for manual execution):
 > `cd /site && hugo --minify --gc`
+> Preferred command from the `clawbot/` directory:
+> `docker compose exec openclaw sh -c 'cd /site && hugo --minify --gc'`
 
 ## Playbooks
 
@@ -127,8 +131,8 @@ Always write the **complete** file — front matter + body. Never write front ma
 **Step 5 — After all fixes, rebuild:**
 
 Note: `hugo --minify --gc` must be run from `/site` inside the container.
-Inform the user to run: `docker exec clawbot-openclaw-1 sh -c "cd /site && hugo --minify --gc"`
-Or use the browser tool to execute it if shell access is available.
+Inform the user to run: `docker compose exec openclaw sh -c 'cd /site && hugo --minify --gc'`
+For live preview, ensure Hugo dev service is running and use `http://hugo:1313` from OpenClaw.
 
 ---
 

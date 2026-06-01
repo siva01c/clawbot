@@ -14,8 +14,11 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install global npm packages
-RUN npm install -g openclaw@latest clawhub@latest && \
+# Install pinned npm packages from package.json
+COPY package.json /tmp/package.json
+RUN npm install -g \
+        openclaw@$(node -p "require('/tmp/package.json').dependencies.openclaw") \
+        clawhub@$(node -p "require('/tmp/package.json').dependencies.clawhub") && \
     npx skills add vercel-labs/agent-skills
 
 RUN mkdir -p /root/.openclaw
