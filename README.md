@@ -1,6 +1,6 @@
-# clawbot — OpenClaw Docker Template
+# osintbot — OpenClaw + LinkedIn OSINT Stack
 
-A ready-to-use Docker template for running an [OpenClaw](https://openclaw.dev) agent gateway with a sandboxed browser, local or cloud AI models, and custom skills.
+A ready-to-use Docker template for running an [OpenClaw](https://openclaw.dev) agent gateway together with LinkedIn scraping and MCP access.
 
 ---
 
@@ -23,6 +23,10 @@ docker compose up -d
 
 # 3. Get the dashboard URL (wait ~30s for startup + npm update)
 docker compose logs openclaw | grep "http://"
+
+# 4. LinkedIn chat and MCP endpoints
+echo "LinkedIn chat: http://localhost:7860"
+echo "MCP endpoint:  http://localhost:7861/mcp/post"
 ```
 
 Open the printed URL in your browser to connect to the gateway.
@@ -41,6 +45,11 @@ All variables are defined in `.env.default`. Copy it to `.env` and fill in real 
 | `OPENCLAW_GATEWAY_TOKEN` | Yes | — | Secret token for gateway auth |
 | `OPENCLAW_PORT` | No | `18789` | Host port for the gateway |
 | `TARGET_ENV` | No | `dev` | Build stage (`dev` or `production`) |
+| `LINKEDIN_USER` | Yes (scrape) | — | LinkedIn login username/email |
+| `LINKEDIN_PASSWORD` | Yes (scrape) | — | LinkedIn login password |
+| `LINKEDIN_TARGET_USERNAME` | Yes (scrape) | — | Profile username to scrape |
+| `LINKEDIN_TARGET_NAME` | No | `LinkedIn User` | Display name used in RAG prompts |
+| `OSINT_MCP_TOKEN` | Recommended | — | Basic-auth token string for MCP server |
 
 *\* Not required if using a local model runner (configure `DMR_BASE_URL` instead)*
 
@@ -115,12 +124,25 @@ docker compose down
 # Restart openclaw only
 docker compose restart openclaw
 
+# Trigger LinkedIn scrape
+docker compose run --rm osint python linkedin_tool.py scrape
+
+# Check MCP health
+curl -s http://localhost:7861/health
+
 # View logs
 docker compose logs -f openclaw
 
 # Get dashboard URL
 docker compose logs openclaw | grep "http://"
 ```
+
+## Services
+
+- `openclaw` on `${OPENCLAW_PORT:-18789}`
+- `osint` Gradio chat on `7860`
+- `mcp` JSON-RPC endpoint on `7861` (`/mcp/post`)
+- `selenium` browser automation on `4445` (VNC `7901`)
 
 ---
 

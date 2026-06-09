@@ -7,3 +7,6 @@ openclaw/identity/
 openclaw/workspace/.openclaw/
 .DS_Store
 # Test caches
+services/linkedin/chromadb/
+services/linkedin/cookies/
+services/linkedin/posts.json
