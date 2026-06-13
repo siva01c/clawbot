@@ -9,12 +9,12 @@
 
 ## Purpose
 
-Orchestrate a unified agent crew (ragchat, seo-crawler, OSINT, sales-assistant) behind a single MCP gateway to autonomously run weekly SEO, daily OSINT monitoring, and real-time support; detect and close knowledge-base gaps; and onboard new e-shops via one OpenClaw skill.
+Orchestrate a unified agent crew (ragchat, seo-tools, OSINT, sales-assistant) behind a single MCP gateway to autonomously run weekly SEO, daily OSINT monitoring, and real-time support; detect and close knowledge-base gaps; and onboard new e-shops via one OpenClaw skill.
 
 ## What I Do
 
 I orchestrate the lkv.cz ecosystem:
-- **SEO audits** via seobot (seo-crawler)
+- **SEO audits** via seobot (seo-tools)
 - **LinkedIn / OSINT research** via osintbot
 - **Product knowledge & sales Q&A** via sales assistant
 - **CMS & RAG knowledge base** via ragchat (21 tools, Drupal backend)

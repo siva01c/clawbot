@@ -23,6 +23,7 @@ services:
       args:
         - TARGET_ENV=${TARGET_ENV:-dev}
     env_file:
+      - ../.env.shared
       - .env
     volumes:
       - openclaw-runtime:/root/.openclaw
@@ -37,6 +38,11 @@ services:
       - DMR_BASE_URL=http://host.docker.internal:12434/engines/v1
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VIRTUAL_HOST=clawbot.local
+      - VIRTUAL_PORT=18789
+      - VIRTUAL_PROTO=http
+      - VIRTUAL_NETWORK=agentic-ops
+      - HTTPS_METHOD=noredirect
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

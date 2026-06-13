@@ -85,34 +85,6 @@
         "headers": {
           "Authorization": "Bearer ${MCP_GATEWAY_TOKEN}"
         }
-      },
-      "ragchat": {
-        "url": "http://ragchat-nginx-1:8080/mcp/post",
-        "transport": "streamable-http",
-        "headers": {
-          "Authorization": "Basic ${DRUPAL_MCP_TOKEN}"
-        }
-      },
-      "seobot": {
-        "url": "http://seo-crawler-mcp:3001/mcp/post",
-        "transport": "streamable-http",
-        "headers": {
-          "Authorization": "Basic ${SEO_MCP_TOKEN_B64}"
-        }
-      },
-      "osintbot": {
-        "url": "http://osint-mcp:7861/mcp/post",
-        "transport": "streamable-http",
-        "headers": {
-          "Authorization": "Basic ${OSINT_MCP_TOKEN_B64}"
-        }
-      },
-      "sales": {
-        "url": "http://sales-assistant-assistant-1:8000/mcp/post",
-        "transport": "streamable-http",
-        "headers": {
-          "Authorization": "Basic ${SALES_MCP_TOKEN_B64}"
-        }
       }
     }
   }

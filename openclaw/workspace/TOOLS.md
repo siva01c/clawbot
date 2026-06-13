@@ -7,7 +7,7 @@
 | **`gateway`** | mcpserver-gateway | 8100 | 29 | **Unified entry point — all tools via single auth** |
 | **`site-files`** | clawbot-openclaw-1 (local) | — | ~10 | **Read/write Hugo source at `/site`** |
 | `ragchat` | ragchat-nginx-1 | 8080 | 21 | CMS content, RAG knowledge base, Drupal |
-| `seobot` | seo-crawler-mcp | 3001 | 3 | Website SEO audits, crawl reports |
+| `seobot` | seo-tools-mcp | 3001 | 3 | Website SEO audits, crawl reports |
 | `osintbot` | osint-mcp | 7861 | 3 | LinkedIn/OSINT research, prospect intel |
 | `sales` | sales-assistant-assistant-1 | 8000 | 3 | Product Q&A, knowledge base search |
 
@@ -23,7 +23,7 @@ Tools routed through the gateway use `{server}__{tool}` format, e.g.:
 
 ### Server skills
 - `ragchat` — CMS and RAG queries (default for content tasks)
-- `seo-crawler` — SEO audits and crawl reports
+- `seo-tools` — SEO audits and crawl reports
 - `osint-intel` — Person/company OSINT from LinkedIn data
 - `sales-assistant` — Product questions and knowledge base search
 
@@ -46,5 +46,5 @@ Reach services by container name over the network.
 - **MCP Gateway: http://mcpserver-gateway:8100** (internal) / http://127.0.0.1:8100 (host)
 - RagChat: http://ragchat-nginx-1:8080
 - Sales assistant: http://sales-assistant-assistant-1:8000
-- SEO crawler MCP: http://seo-crawler-mcp:3001
+- SEO crawler MCP: http://seo-tools-mcp:3001
 - OSINT MCP: http://osint-mcp:7861
