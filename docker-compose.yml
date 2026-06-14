@@ -35,7 +35,7 @@ services:
     volumes:
       - ironclaw-runtime:/root/.ironclaw/reborn
       - ./ironclaw:/ironclaw-src:ro
-      - ./openclaw/workspace:/root/.ironclaw/reborn/workspace
+      - ./ironclaw/workspace:/root/.ironclaw/reborn/workspace
       - ./AGENTS.md:/root/.ironclaw/reborn/workspace/AGENTS.md:ro
       - ../ludekkvapil:/site
     ports:
