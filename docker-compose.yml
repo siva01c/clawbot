@@ -1,9 +1,9 @@
 services:
   hugo:
-    image: clawbot-openclaw:latest
+    image: clawbot-ironclaw:latest
     build:
-      context: .
-      dockerfile: docker/openclaw/Dockerfile
+      context: ..
+      dockerfile: clawbot/docker/ironclaw/Dockerfile
       args:
         - TARGET_ENV=${TARGET_ENV:-dev}
     working_dir: /site
@@ -22,21 +22,21 @@ services:
     networks:
       - clawbot
 
-  openclaw:
-    image: clawbot-openclaw:latest
+  ironclaw:
+    image: clawbot-ironclaw:latest
     build:
-      context: .
-      dockerfile: docker/openclaw/Dockerfile
+      context: ..
+      dockerfile: clawbot/docker/ironclaw/Dockerfile
       args:
         - TARGET_ENV=${TARGET_ENV:-dev}
     env_file:
       - ../.env.shared
       - .env
     volumes:
-      - openclaw-runtime:/root/.openclaw
-      - ./openclaw:/openclaw-src:ro
-      - ./openclaw/workspace:/root/.openclaw/workspace
-      - ./AGENTS.md:/root/.openclaw/workspace/AGENTS.md:ro
+      - ironclaw-runtime:/root/.ironclaw/reborn
+      - ./ironclaw:/ironclaw-src:ro
+      - ./openclaw/workspace:/root/.ironclaw/reborn/workspace
+      - ./AGENTS.md:/root/.ironclaw/reborn/workspace/AGENTS.md:ro
       - ../ludekkvapil:/site
     ports:
       - "${OPENCLAW_PORT:-18789}:18789"
@@ -45,6 +45,8 @@ services:
       - DMR_BASE_URL=http://host.docker.internal:12434/engines/v1
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - IRONCLAW_REBORN_WEBUI_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - IRONCLAW_REBORN_WEBUI_USER_ID=reborn-cli
       - VIRTUAL_HOST=clawbot.local
       - VIRTUAL_PORT=18789
       - VIRTUAL_PROTO=http
@@ -71,57 +73,6 @@ services:
     networks:
       - clawbot
 
-  osint:
-    build:
-      context: ./services/linkedin
-      dockerfile: Dockerfile
-    container_name: osintbot-linkedin
-    env_file:
-      - .env
-    environment:
-      - SELENIUM_REMOTE_URL=http://selenium:4444/wd/hub
-    volumes:
-      - ./services/linkedin:/app
-    ports:
-      - "7860:7860"
-    depends_on:
-      - selenium
-    command: ["python", "linkedin_tool.py", "chat", "--host", "0.0.0.0", "--port", "7860"]
-    networks:
-      - clawbot
-
-  mcp:
-    build:
-      context: ./services/linkedin
-      dockerfile: Dockerfile
-    container_name: osintbot-mcp
-    env_file:
-      - .env
-    environment:
-      - OSINT_MCP_PORT=7861
-      - POSTS_PATH=/app/posts.json
-    volumes:
-      - ./services/linkedin:/app
-    ports:
-      - "7861:7861"
-    command: ["python", "osint_mcp.py"]
-    restart: unless-stopped
-    networks:
-      clawbot:
-      agentic-ops:
-        aliases:
-          - osint-mcp
-
-  selenium:
-    image: selenium/standalone-chrome:latest
-    container_name: osintbot-selenium
-    hostname: selenium
-    shm_size: 2gb
-    ports:
-      - "4445:4444"
-      - "7901:7900"
-    networks:
-      - clawbot
 
 
 networks:
@@ -131,4 +82,4 @@ networks:
     external: true
 
 volumes:
-  openclaw-runtime:
+  ironclaw-runtime:

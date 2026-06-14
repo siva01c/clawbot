@@ -1,0 +1,21 @@
+api_version = "ironclaw.runtime/v1"
+
+[boot]
+profile = "local-dev"
+
+[identity]
+tenant = "reborn-cli"
+default_agent = "clawbot"
+default_owner = "reborn-cli"
+
+[llm.default]
+provider_id = "openai"
+model = "gpt-5"
+api_key_env = "OPENAI_API_KEY"
+
+[webui]
+listen_host = "0.0.0.0"
+listen_port = 18789
+env_token_var = "IRONCLAW_REBORN_WEBUI_TOKEN"
+env_user_id_var = "IRONCLAW_REBORN_WEBUI_USER_ID"
+allowed_origins = ["http://clawbot.local", "http://localhost:18789"]
