@@ -7,11 +7,18 @@ services:
       args:
         - TARGET_ENV=${TARGET_ENV:-dev}
     working_dir: /site
-    command: ["sh", "-c", "hugo server -D --bind 0.0.0.0 --port 1313"]
+    command: ["sh", "-c", "hugo server -D --bind 0.0.0.0 --port 1313 --navigateToChanged"]
     volumes:
       - ../ludekkvapil:/site
     ports:
       - "${HUGO_DEV_PORT:-1313}:1313"
+      - "1314:1314"
+      - "1315:1315"
+      - "1316:1316"
+      - "1317:1317"
+      - "1318:1318"
+      - "1319:1319"
+      - "1320:1320"
     networks:
       - clawbot
 
