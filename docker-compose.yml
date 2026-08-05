@@ -22,6 +22,33 @@ services:
     networks:
       - clawbot
 
+  ironclaw-proxy:
+    image: nginx:alpine
+    ports:
+      - "${OPENCLAW_PORT:-18790}:18790"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../scratch-ironclaw-repo/crates/ironclaw_webui_v2_static/static/js/pages/logs:/nginx-logs:ro
+    depends_on:
+      - ironclaw
+    networks:
+      - clawbot
+      - agentic-ops
+
+  # TLS terminator for the internal MCP gateway. Sits in both networks so
+  # ironclaw (clawbot only) can reach mcpserver-gateway (agentic-ops only)
+  # over https — the Reborn runtime rejects plain-http MCP endpoints.
+  mcp-tls:
+    image: nginx:alpine
+    volumes:
+      - ./mcp-tls/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./mcp-tls/certs:/etc/nginx/certs:ro
+    networks:
+      clawbot:
+        aliases:
+          - mcp-gateway.clawbot.internal
+      agentic-ops:
+
   ironclaw:
     image: clawbot-ironclaw:latest
     build:
@@ -38,14 +65,15 @@ services:
       - ./ironclaw/workspace:/root/.ironclaw/reborn/workspace
       - ./AGENTS.md:/root/.ironclaw/reborn/workspace/AGENTS.md:ro
       - ../ludekkvapil:/site
-    ports:
-      - "${OPENCLAW_PORT:-18789}:18789"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - IRONCLAW_REBORN_WEBUI_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - IRONCLAW_REBORN_WEBUI_USER_ID=reborn-cli
+      # Registers the internal MCP gateway extension. Unset = extension is not
+      # in the catalog at all. MCP_GATEWAY_TOKEN comes from .env via env_file.
+      - CLAWBOT_MCP_GATEWAY_URL=${CLAWBOT_MCP_GATEWAY_URL:-https://mcp-gateway.clawbot.internal:8443/mcp/post}
       - VIRTUAL_HOST=clawbot.local
       - VIRTUAL_PORT=18789
       - VIRTUAL_PROTO=http
@@ -56,10 +84,9 @@ services:
     depends_on:
       - hugo
       - openclaw-sandbox-browser
-      - mcp
+      - mcp-tls
     networks:
       - clawbot
-      - agentic-ops
 
   openclaw-sandbox-browser:
     image: browserless/chrome:latest

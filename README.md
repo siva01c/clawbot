@@ -1,6 +1,8 @@
-# osintbot — OpenClaw + LinkedIn OSINT Stack
+# clawbot — OpenClaw Agent Gateway + Hugo
 
-A ready-to-use Docker template for running an [OpenClaw](https://openclaw.dev) agent gateway together with LinkedIn scraping and MCP access.
+A ready-to-use Docker template for running an [OpenClaw](https://openclaw.dev) agent gateway together with the Hugo dev server for the ludekkvapil.cz site.
+
+> **Note:** OSINT / LinkedIn research lives in the separate `osintbot` project, not here. The old Selenium/Gradio LinkedIn stack that used to run in `services/linkedin/` (ports 7860/7861) has been removed — it was superseded by osintbot's Apify-based tooling.
 
 ---
 
@@ -23,10 +25,6 @@ docker compose up -d
 
 # 3. Get the dashboard URL (wait ~30s for startup + npm update)
 docker compose logs openclaw | grep "http://"
-
-# 4. LinkedIn chat and MCP endpoints
-echo "LinkedIn chat: http://localhost:7860"
-echo "MCP endpoint:  http://localhost:7861/mcp/post"
 ```
 
 Open the printed URL in your browser to connect to the gateway.
@@ -46,11 +44,6 @@ All variables are defined in `.env.default`. Copy it to `.env` and fill in real 
 | `OPENCLAW_PORT` | No | `18789` | Host port for the gateway |
 | `HUGO_DEV_PORT` | No | `1313` | Host port mapped to Hugo dev server |
 | `TARGET_ENV` | No | `dev` | Build stage (`dev` or `production`) |
-| `LINKEDIN_USER` | Yes (scrape) | — | LinkedIn login username/email |
-| `LINKEDIN_PASSWORD` | Yes (scrape) | — | LinkedIn login password |
-| `LINKEDIN_TARGET_USERNAME` | Yes (scrape) | — | Profile username to scrape |
-| `LINKEDIN_TARGET_NAME` | No | `LinkedIn User` | Display name used in RAG prompts |
-| `OSINT_MCP_TOKEN` | Recommended | — | Basic-auth token string for MCP server |
 
 *\* Not required if using a local model runner (configure `DMR_BASE_URL` instead)*
 
@@ -152,12 +145,6 @@ docker compose down
 # Restart openclaw only
 docker compose restart openclaw
 
-# Trigger LinkedIn scrape
-docker compose run --rm osint python linkedin_tool.py scrape
-
-# Check MCP health
-curl -s http://localhost:7861/health
-
 # View logs
 docker compose logs -f openclaw
 
@@ -167,10 +154,9 @@ docker compose logs openclaw | grep "http://"
 
 ## Services
 
-- `openclaw` on `${OPENCLAW_PORT:-18789}`
-- `osint` Gradio chat on `7860`
-- `mcp` JSON-RPC endpoint on `7861` (`/mcp/post`)
-- `selenium` browser automation on `4445` (VNC `7901`)
+- `ironclaw` (OpenClaw gateway) on `${OPENCLAW_PORT:-18789}`
+- `hugo` dev server on `${HUGO_DEV_PORT:-1313}`
+- `openclaw-sandbox-browser` (headless Chrome, internal)
 
 ---
 

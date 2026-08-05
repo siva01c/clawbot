@@ -9,7 +9,7 @@ This document acts as the consolidated tracking system for the **Agentic Ops** r
 | Phase | Component / Goal | Status | Key Code References |
 |---|---|---|---|
 | **Phase 0** | Nginx Reverse Proxy & Network | ⚠️ **Partial** (Stopped) | [ops-proxy/docker-compose.yml](file:///home/siva01/projects/lkv/ops-proxy/docker-compose.yml) |
-| **Phase 1** | Specialist MCP Servers (ragchat, seo, osint, sales) |  **Done** | [mcp-server.ts](file:///home/siva01/projects/lkv/seo-tools/src/mcp-server.ts), [osint_mcp.py](file:///home/siva01/projects/lkv/osintbot/services/linkedin/osint_mcp.py), [mcp.py](file:///home/siva01/projects/lkv/sales-assistant/src/assistant/api/routes/mcp.py) |
+| **Phase 1** | Specialist MCP Servers (ragchat, seo, osint, sales) |  **Done** | [mcp-server.ts](file:///home/siva01/projects/lkv/seo-tools/src/mcp-server.ts), [osintbot_mcp.py](file:///home/siva01/projects/lkv/osintbot/scripts/osintbot_mcp.py), [mcp.py](file:///home/siva01/projects/lkv/sales-assistant/src/assistant/api/routes/mcp.py) |
 | **Phase 2** | MCP Gateway Aggregator |  **Done** | [main.py](file:///home/siva01/projects/lkv/mcpserver/gateway/main.py) |
 | **Phase 3** | OpenClaw Integration | ⚠️ **Partial** | [openclaw/.mcp.json](file:///home/siva01/projects/lkv/clawbot/openclaw/workspace/.mcp.json) |
 | **Phase 4** | Playbook Skills Definition |  **Done** | [weekly-seo-audit](file:///home/siva01/projects/lkv/clawbot/openclaw/workspace/skills/weekly-seo-audit/SKILL.md), [competitor-monitoring](file:///home/siva01/projects/lkv/clawbot/openclaw/workspace/skills/competitor-monitoring/SKILL.md) |
@@ -43,7 +43,7 @@ This document acts as the consolidated tracking system for the **Agentic Ops** r
   - [x] Map `mcpserver` static site to `mcpserver.local` (Port 80) -> [mcpserver/docker-compose.yml](file:///home/siva01/projects/lkv/mcpserver/docker-compose.yml)
   - [x] Map `mcpserver-gateway` to `mcp-gateway.local` (Port 8100) -> [mcpserver/docker-compose.yml](file:///home/siva01/projects/lkv/mcpserver/docker-compose.yml)
   - [ ] Map `seo-tools` MCP to `seo.local` (Port 3001) -> **Todo:** Add `VIRTUAL_HOST` variables to [seo-tools/docker-compose.yml](file:///home/siva01/projects/lkv/seo-tools/docker-compose.yml)
-  - [ ] Map `osintbot` Gradio/MCP to `osint.local` (Ports 7860/7861) -> **Todo:** Add `VIRTUAL_HOST` variables to [osintbot/docker-compose.yml](file:///home/siva01/projects/lkv/osintbot/docker-compose.yml)
+  - [ ] Map `osintbot` MCP (`osintbot-mcp`, Port 8200) — internal only, reached via mcpserver gateway; no public VIRTUAL_HOST needed -> [osintbot/docker-compose.yml](file:///home/siva01/projects/lkv/osintbot/docker-compose.yml)
   - [ ] Map `clawbot` OpenClaw dashboard to `clawbot.local` (Port 18789) -> **Todo:** Add `VIRTUAL_HOST` variables to [clawbot/docker-compose.yml](file:///home/siva01/projects/lkv/clawbot/docker-compose.yml)
 - [ ] **0.3 — Local /etc/hosts entries (dev environment)**
   - [ ] Add domain mapping in host `/etc/hosts`:
@@ -64,7 +64,7 @@ This document acts as the consolidated tracking system for the **Agentic Ops** r
 - [x] **1.2 — seo-tools: add MCP HTTP wrapper**
   - Implemented in [mcp-server.ts](file:///home/siva01/projects/lkv/seo-tools/src/mcp-server.ts). Exposes `crawl`, `get_report`, and `list_reports`.
 - [x] **1.3 — OSINT: add MCP HTTP endpoint**
-  - Implemented in [osint_mcp.py](file:///home/siva01/projects/lkv/osintbot/services/linkedin/osint_mcp.py). Exposes `query_intel`, `list_posts`, and `get_status`.
+  - Implemented in [osintbot_mcp.py](file:///home/siva01/projects/lkv/osintbot/scripts/osintbot_mcp.py) (fastmcp tools), exposed over HTTP via `osintbot_mcp_http.py` shim. Exposes `osintbot_investigate`, `osintbot_plan`, `osintbot_wiki_lookup`, `osintbot_status`, etc.
 - [x] **1.4 — sales-assistant: expose chat and product tools**
   - Implemented in [mcp.py](file:///home/siva01/projects/lkv/sales-assistant/src/assistant/api/routes/mcp.py). Exposes `chat`, `search_knowledge`, and `get_status`.
 

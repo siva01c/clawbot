@@ -33,6 +33,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Trust the internal MCP gateway's TLS CA. `ironclaw_network` builds reqwest
+# with `rustls-tls-native-roots`, so the system trust store is what it reads.
+# Generate the cert first: sh clawbot/mcp-tls/gen-certs.sh
+COPY clawbot/mcp-tls/certs/ca.crt /usr/local/share/ca-certificates/clawbot-mcp-ca.crt
+RUN update-ca-certificates
+
 # Copy compiled binaries from builder stage
 COPY --from=builder /build-bin/* /usr/local/bin/
 

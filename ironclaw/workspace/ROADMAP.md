@@ -138,7 +138,7 @@ nginx-proxy (TLS, routing)
 └── clawbot (you — OpenClaw gateway, port 18790)
     ├── ragchat  (Drupal CMS + ChromaDB, port 8080)
     ├── seobot   (Node.js crawler, port 3001)
-    ├── osintbot (FastAPI + ChromaDB, port 7861)
+    ├── osintbot (ironclaw agent + Apify OSINT, MCP port 8200)
     └── sales    (FastAPI + ChromaDB, port 8000)
 ```
 

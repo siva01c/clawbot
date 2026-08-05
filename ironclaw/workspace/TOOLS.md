@@ -8,14 +8,14 @@
 | **`site-files`** | clawbot-openclaw-1 (local) | — | ~10 | **Read/write Hugo source at `/site`** |
 | `ragchat` | ragchat-nginx-1 | 8080 | 21 | CMS content, RAG knowledge base, Drupal |
 | `seobot` | seo-tools-mcp | 3001 | 3 | Website SEO audits, crawl reports |
-| `osintbot` | osint-mcp | 7861 | 3 | LinkedIn/OSINT research, prospect intel |
+| `osintbot` | osintbot-mcp | 8200 | — | LinkedIn (Apify)/OSINT research, prospect intel |
 | `sales` | sales-assistant-assistant-1 | 8000 | 3 | Product Q&A, knowledge base search |
 
 ### Gateway tool naming
 
 Tools routed through the gateway use `{server}__{tool}` format, e.g.:
 - `seobot__crawl`, `seobot__get_report`, `seobot__list_reports`
-- `osintbot__get_status`, `osintbot__list_posts`, `osintbot__query_intel`
+- `osintbot__osintbot_investigate`, `osintbot__osintbot_plan`, `osintbot__osintbot_wiki_lookup`, `osintbot__osintbot_status`
 - `sales__chat`, `sales__get_status`, `sales__search_knowledge`
 - `ragchat__*` (21 tools — use gateway for all Drupal/KB operations)
 
@@ -47,4 +47,4 @@ Reach services by container name over the network.
 - RagChat: http://ragchat-nginx-1:8080
 - Sales assistant: http://sales-assistant-assistant-1:8000
 - SEO crawler MCP: http://seo-tools-mcp:3001
-- OSINT MCP: http://osint-mcp:7861
+- OSINT MCP: http://osintbot-mcp:8200
