@@ -20,10 +20,13 @@ A ready-to-use Docker template for running an [OpenClaw](https://openclaw.dev) a
 cp .env.default .env
 # Edit .env — at minimum set OPENAI_API_KEY and OPENCLAW_GATEWAY_TOKEN
 
-# 2. Start all services
+# 2. Generate TLS certificates for internal MCP gateway
+sh mcp-tls/gen-certs.sh
+
+# 3. Start all services
 docker compose up -d
 
-# 3. Get the dashboard URL (wait ~30s for startup + npm update)
+# 4. Get the dashboard URL (wait ~30s for startup + npm update)
 docker compose logs openclaw | grep "http://"
 ```
 
@@ -41,9 +44,11 @@ All variables are defined in `.env.default`. Copy it to `.env` and fill in real 
 |---|---|---|---|
 | `OPENAI_API_KEY` | Yes* | — | OpenAI API key |
 | `OPENCLAW_GATEWAY_TOKEN` | Yes | — | Secret token for gateway auth |
-| `OPENCLAW_PORT` | No | `18789` | Host port for the gateway |
+| `OPENCLAW_PORT` | No | `18790` | Host port for the gateway (via Nginx proxy) |
 | `HUGO_DEV_PORT` | No | `1313` | Host port mapped to Hugo dev server |
 | `TARGET_ENV` | No | `dev` | Build stage (`dev` or `production`) |
+| `MCP_GATEWAY_TOKEN` | Recommended | — | Bearer token expected by `mcpserver-gateway` |
+| `CLAWBOT_MCP_GATEWAY_URL` | No | `https://mcp-gateway.clawbot.internal:8443/mcp/post` | Internal HTTPS URL for MCP gateway |
 
 *\* Not required if using a local model runner (configure `DMR_BASE_URL` instead)*
 
@@ -154,7 +159,9 @@ docker compose logs openclaw | grep "http://"
 
 ## Services
 
-- `ironclaw` (OpenClaw gateway) on `${OPENCLAW_PORT:-18789}`
+- `ironclaw-proxy` (Nginx reverse proxy for web UI + logs) on `${OPENCLAW_PORT:-18790}`
+- `ironclaw` (OpenClaw gateway backend, internal port 18789)
+- `mcp-tls` (TLS terminator for internal MCP gateway, internal port 8443)
 - `hugo` dev server on `${HUGO_DEV_PORT:-1313}`
 - `openclaw-sandbox-browser` (headless Chrome, internal)
 
@@ -163,3 +170,4 @@ docker compose logs openclaw | grep "http://"
 ## GPU / Local Model Runner
 
 See `docker-compose.gpu.yml` and `AGENTS.md` for instructions on enabling GPU-accelerated local models.
+
