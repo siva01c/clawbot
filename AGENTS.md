@@ -17,14 +17,34 @@ clawbot/
 │       ├── .mcp.json       # MCP server connections (Drupal, Apify, etc.)
 │       ├── IDENTITY.md     # Agent name, persona, avatar
 │       ├── SOUL.md         # Agent values and behavioural guidelines
-│       ├── TOOLS.md        # Available tools and how to use them
-│       ├── USER.md         # Info about the user (fill in as needed)
+│       ├── TOOLS.md        # Available tools and how to use them — gitignored (real container
+│       │                   #   names); copy from TOOLS.md.example
+│       ├── USER.md         # Info about the user — gitignored (personal data); copy from
+│       │                   #   USER.md.example
+│       ├── skills/redmine-time-tracking/projects.md
+│       │                   # Directory -> Redmine project map — gitignored; copy from .example
 │       └── skills/         # Custom skill playbooks (SKILL.md per skill)
 ├── docker-compose.yml      # Main Compose file
 ├── docker-compose.gpu.yml  # GPU / vLLM variant
 ├── .env.default            # Template for .env — commit this, never commit .env
 └── .env                    # Local secrets — gitignored
 ```
+
+> **Upgrading a checkout from before `TOOLS.md` / `USER.md` were untracked:** `git pull`
+> deletes both from `ironclaw/workspace/`, because they are no longer in the repo. Save them
+> first and put them back after:
+>
+> ```bash
+> cp ironclaw/workspace/TOOLS.md ironclaw/workspace/USER.md /tmp/
+> git pull
+> cp /tmp/TOOLS.md /tmp/USER.md ironclaw/workspace/
+> ```
+>
+> Forgot? `git show <commit-before-pull>:ironclaw/workspace/TOOLS.md` still has them. If the
+> container starts without them, `start.sh` seeds them from the `.example` templates and logs a
+> warning — the agent keeps running, but on placeholders until you fill the files in. The same
+> goes for the Redmine project map, `ironclaw/workspace/skills/redmine-time-tracking/projects.md`
+> (never tracked; copy `projects.md.example` and fill in your projects).
 
 ---
 
@@ -55,6 +75,8 @@ docker compose logs -f ironclaw
 - **`ironclaw/config.toml`** uses env var interpolation where appropriate — always use env vars, never hardcode secrets.
 - **`ironclaw/workspace/`** is volume-mounted read-write — changes there take effect on `docker compose restart ironclaw` (no rebuild needed).
 - **`docker/ironclaw/Dockerfile` and `start.sh`** require a full `docker compose build` to take effect.
+- **Task discipline:** substantive work needs its own Redmine issue, **claimed before you start** (`agent_lock` / `agent_lock_expires` custom fields + status *In progress*) so a second agent doesn't take the same issue — see "Claim before work" in `ironclaw/workspace/skills/redmine-time-tracking/SKILL.md`. A live lock held by someone else is left alone.
+- **Time tracking:** after substantive work on a project, log hours to Redmine following `ironclaw/workspace/skills/redmine-time-tracking/SKILL.md` (activity "AI Agent"; log against the issue you claimed). The always-on trigger and rules live in `ironclaw/workspace/SOUL.md` → "Track Your Work"; the directory → project map is in that skill, § "Resolve the Redmine project".
 
 ---
 

@@ -47,7 +47,7 @@ All variables are defined in `.env.default`. Copy it to `.env` and fill in real 
 | `OPENCLAW_PORT` | No | `18790` | Host port for the gateway (via Nginx proxy) |
 | `HUGO_DEV_PORT` | No | `1313` | Host port mapped to Hugo dev server |
 | `TARGET_ENV` | No | `dev` | Build stage (`dev` or `production`) |
-| `MCP_GATEWAY_TOKEN` | Recommended | — | Bearer token expected by `mcpserver-gateway` |
+| `AGENT_TOKEN_CLAWBOT` | Yes | — | ClawBot's own token for the MCP gateway (agent id `clawbot`); the same value must be registered with the gateway |
 | `CLAWBOT_MCP_GATEWAY_URL` | No | `https://mcp-gateway.clawbot.internal:8443/mcp/post` | Internal HTTPS URL for MCP gateway |
 
 *\* Not required if using a local model runner (configure `DMR_BASE_URL` instead)*

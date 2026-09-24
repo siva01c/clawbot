@@ -2,7 +2,8 @@
 
 > Vision (from lean canvas): An autonomous operations department for small e-commerce stores —
 > marketing, support, and market intelligence that run themselves, 24/7.
-> You (Claw) are the manager agent orchestrating the specialist crew.
+> You (Claw) are the crew's Ops Analyst. n8n orchestrates the pipelines; you analyse
+> what they produce and propose what to do next (see IDENTITY.md).
 
 ---
 
@@ -11,7 +12,7 @@
 Small e-shops can't afford separate teams for marketing, support, and market research.
 Point tools (chatbots, SEO apps) don't talk to each other — the owner is the manual glue.
 
-**The answer:** One agent crew, orchestrated by you:
+**The answer:** One agent crew, orchestrated by n8n and analysed by you:
 
 | Specialist | Role | Status |
 |---|---|---|
@@ -39,37 +40,39 @@ All four MCP servers are live and registered. You can call any specialist tool r
 > Goal: single authenticated entry point for all MCP traffic, with merged tool list and request routing.
 
 Currently you call each specialist directly by container name. Phase 2 adds a lightweight
-aggregator (`mcpserver/`) behind nginx-proxy so:
+aggregator (the MCP gateway) behind a reverse proxy so:
 - One token, one endpoint for external clients
 - Rate limiting and structured access logs in one place
 - Tool names are namespaced (`ragchat.*`, `seo.*`, `osint.*`, `sales.*`)
 
 **Key tasks:**
-- [x] Build aggregator service in `mcpserver/` (FastAPI, port 8100)
+- [x] Build the aggregator service (FastAPI)
   - `GET /health` + `POST /mcp/post` → merged manifest + routing
 - [x] Add `MCP_GATEWAY_TOKEN` for external access
-- [ ] Structured JSON logging to `mcpserver/logs/`
+- [ ] Structured JSON logging in the gateway
 - [x] Test: merged tool list returns all 29 tools (30 target, 1 short due to tool overlap)
 
 ---
 
-## Phase 3 — Scheduled agent workflows 🔄
+## Phase 3 — Analysis inside scheduled pipelines 🔄
 
-> Goal: you run recurring tasks without being asked.
+> Goal: the recurring work runs on a schedule — and you do the part that needs judgment.
 
-Each workflow is a skill file in `workspace/skills/`. The four core cadences:
+n8n owns the schedule and runs the collection steps (crawls, OSINT runs, KB imports). You are
+called for the analysis step and hand back a proposal; you don't start or schedule these
+yourself (SOUL.md, IDENTITY.md).
 
-| Skill | Trigger | What You Do |
+| Pipeline (n8n) | Cadence | Your step |
 |---|---|---|
-| `weekly-seo-audit` | Monday 09:00 | Crawl client site → compare sitemap → import new pages into ragchat KB |
-| `competitor-monitoring` | Daily | Scrape competitor LinkedIn → extract intel → feed into ragchat KB |
-| `support-escalation-review` | Daily | Find unanswered ragchat questions → research → generate FAQ entries |
-| `new-client-onboarding` | Manual (new contract) | Full crawl + OSINT baseline + provision ragchat shop + confirm all agents operational |
+| SEO audit | Weekly | Read the crawl and findings → prioritised fix list with reasoning |
+| Competitor monitoring | Daily | Read the collected OSINT → synthesis worth feeding into the KB |
+| Support escalation review | Daily | Read unanswered questions → draft answers and FAQ entries |
+| New client onboarding | Manual | Review the baseline crawl and OSINT → onboarding notes; provisioning is not yours |
 
 **Key tasks:**
 - [x] Flesh out each skill with real tool call sequences
-- [ ] Define OpenClaw schedule triggers (cron or event-based) — HEARTBEAT.md ready, awaiting scheduler activation
-- [ ] Test weekly-seo-audit end-to-end on `ludekkvapil.cz` (dogfood)
+- [ ] Rewrite the skills around the analysis step (input = results n8n hands over)
+- [ ] Test the SEO audit pipeline end-to-end with the analysis step
 
 ---
 

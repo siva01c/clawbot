@@ -12,3 +12,15 @@ openclaw/workspace/.openclaw/
 services/linkedin/chromadb/
 services/linkedin/cookies/
 services/linkedin/posts.json
+
+# Runtime ecosystem map — real container names/ports; this repo is PUBLIC.
+# Bind-mounted from disk (see docker-compose.yml), so it never needs to be tracked.
+# Track ironclaw/workspace/TOOLS.md.example instead.
+ironclaw/workspace/TOOLS.md
+# Facts about the person ClawBot works for — personal data, bind-mounted from disk like TOOLS.md.
+# Track ironclaw/workspace/USER.md.example instead.
+ironclaw/workspace/USER.md
+# Directory -> Redmine project map — names clients and private projects. Track the .example.
+ironclaw/workspace/skills/redmine-time-tracking/projects.md
+# Internal build roadmap — absolute local paths into private repos, auth routes, token names
+ironclaw/workspace/todo.md
