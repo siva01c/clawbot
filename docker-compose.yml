@@ -57,7 +57,9 @@ services:
       args:
         - TARGET_ENV=${TARGET_ENV:-dev}
     env_file:
-      - ../.env.shared
+      # Optional operator-wide env file shared by several stacks on one host.
+      - path: ../.env.shared
+        required: false
       - .env
     volumes:
       - ironclaw-runtime:/root/.ironclaw/reborn
@@ -72,7 +74,12 @@ services:
       - IRONCLAW_REBORN_WEBUI_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - IRONCLAW_REBORN_WEBUI_USER_ID=reborn-cli
       # Registers the internal MCP gateway extension. Unset = extension is not
-      # in the catalog at all. MCP_GATEWAY_TOKEN comes from .env via env_file.
+      # in the catalog at all.
+      # ClawBot's own gateway identity. The extension reads MCP_GATEWAY_TOKEN by
+      # name, so it is pinned here to the per-agent token; that also overrides any
+      # shared gateway token the operator-wide env file may carry.
+      - MCP_GATEWAY_TOKEN=${AGENT_TOKEN_CLAWBOT:?set AGENT_TOKEN_CLAWBOT in clawbot/.env (the value registered with the gateway)}
+      - AGENT_TOKEN_CLAWBOT=${AGENT_TOKEN_CLAWBOT}
       - CLAWBOT_MCP_GATEWAY_URL=${CLAWBOT_MCP_GATEWAY_URL:-https://mcp-gateway.clawbot.internal:8443/mcp/post}
       - VIRTUAL_HOST=clawbot.local
       - VIRTUAL_PORT=18789

@@ -1,0 +1,11 @@
+# Directory → Redmine project map
+
+> **Template.** Copy to `projects.md` next to this file and fill in your own rows:
+> `cp projects.md.example projects.md`. `projects.md` is gitignored — the real map names
+> clients and private projects, and this repository is public. `start.sh` seeds it from this
+> template when it is missing.
+
+| Subproject / area | Redmine identifier |
+|---|---|
+| `clawbot` — you, your workspace and your skills | `clawbot` |
+| `<directory or site>` | `<redmine-project-identifier>` |

@@ -1,0 +1,63 @@
+# TOOLS.md - Ecosystem Map
+
+> **Template.** Copy to `TOOLS.md` and replace the placeholder container names and ports with
+> your actual ones:  `cp TOOLS.md.example TOOLS.md`
+>
+> `TOOLS.md` is gitignored on purpose — this repo is public, and the real ecosystem map is
+> internal infrastructure detail. The workspace is bind-mounted, so the agent reads your local
+> copy directly; a `docker compose restart ironclaw` picks up changes.
+
+## MCP Servers
+
+| Server | Container | Port | Tools | Use For |
+|---|---|---|---|---|
+| **`gateway`** | mcp-gateway | <port> | 29 | **Unified entry point — all tools via single auth** |
+| `ragchat` | ragchat | <port> | 21 | CMS content, RAG knowledge base, Drupal |
+| `seobot` | seo-mcp | <port> | 3 | Website SEO audits, crawl reports |
+| `osintbot` | osint-mcp | <port> | — | Status and results of OSINT investigations n8n already ran |
+| `sales` | sales-api | <port> | 3 | Product Q&A, knowledge base search |
+| `redmine` | redmine-mcp | <port> | 49 | Time tracking + issues in the self-hosted Redmine (CRM). Log agent hours here. |
+
+### Gateway tool naming
+
+Tools routed through the gateway use `{server}__{tool}` format, e.g.:
+- `seobot__get_report`, `seobot__list_reports` — read crawl results; starting a crawl
+  (`seobot__crawl`) is n8n's job
+- `osintbot__osintbot_status`, `osintbot__osintbot_wiki_lookup` — read results; starting an
+  investigation (`osintbot__osintbot_investigate`) is n8n's job, not yours
+- `sales__chat`, `sales__get_status`, `sales__search_knowledge`
+- `ragchat__*` (21 tools — use gateway for all Drupal/KB operations)
+- `redmine__list_redmine_projects`, `redmine__search_redmine_issues`, `redmine__create_redmine_issue`, `redmine__update_redmine_issue`, `redmine__list_project_trackers`, `redmine__list_time_entry_activities`, `redmine__manage_time_entry`, `redmine__list_time_entries`, `redmine__get_current_user` (49 tools total)
+
+## Skills
+
+### Server skills
+- `ragchat` — CMS and RAG queries (default for content tasks)
+- `seo-tools` — SEO audits and crawl reports
+- `osint-intel` — Person/company OSINT from LinkedIn data
+- `sales-assistant` — Product questions and knowledge base search
+
+### Analysis skills — n8n runs the pipeline, you do the judgment step
+- `weekly-seo-audit` — read the crawl n8n ran → prioritised fix list and action plan
+- `competitor-monitoring` — read the OSINT results n8n collected → synthesis for the KBs
+- `support-escalation-review` — find unanswered questions → draft answers and FAQ entries
+- `redmine-time-tracking` — After substantive work on a project, find/create its Redmine issue and file a time entry under the "AI Agent" activity
+
+Not yours, even though the skill folders are still in `skills/`: `hugo-site-editor` (writes
+the website — Claude Code's job) and `new-client-onboarding` (provisions agents and config).
+If a task needs them, propose it in a Redmine note instead.
+
+## Docker Network
+
+All containers on a shared bridge network (see `docker-compose.yml`).
+OpenClaw container: `<agent-container>`.
+Reach services by container name over the network.
+
+## Key URLs
+
+- OpenClaw dashboard: http://127.0.0.1:<port>
+- **MCP Gateway: http://mcp-gateway:<port>** (internal) / http://127.0.0.1:<port> (host)
+- RagChat: http://ragchat:<port>
+- Sales assistant: http://sales-api:<port>
+- SEO crawler MCP: http://seo-mcp:<port>
+- OSINT MCP: http://osint-mcp:<port>

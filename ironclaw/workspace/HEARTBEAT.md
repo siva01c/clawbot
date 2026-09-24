@@ -5,16 +5,11 @@
 
 # Keep this file empty (or with only comments) to skip heartbeat API calls.
 
-# Weekly SEO audit — every Monday at 09:00
-0 9 * * 1 | weekly-seo-audit | Run SEO audit on ludekkvapil.cz
+# No pipelines here. What runs and when is n8n's call (SOUL.md, IDENTITY.md): the weekly SEO
+# audit, competitor monitoring and the support-escalation review are n8n workflows that call
+# ClawBot for the analysis step. Scheduling them here as well would run them twice, and would
+# have ClawBot start work its role says it never starts.
 
-# Daily competitor monitoring — every day at 08:00
-0 8 * * * | competitor-monitoring | Scan OSINT corpus for competitor signals
-
-# Daily support escalation review — every day at 08:30
-30 8 * * * | support-escalation-review | Find and close knowledge gaps from yesterday
-
-# NOTE: Uncomment the lines above (remove the leading #) when heartbeat scheduling
-# is activated in OpenClaw. Currently all tasks are triggered manually.
-
-# Add tasks below when you want the agent to check something periodically.
+# End-of-day time-tracking flush — every day at 18:00. Bookkeeping of ClawBot's own hours,
+# not a pipeline: logs `last − started` of each open WORK SESSION line in MEMORY.md.
+0 18 * * * | redmine-time-tracking | Flush open WORK SESSION lines from MEMORY.md to Redmine
