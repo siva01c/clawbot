@@ -9,7 +9,7 @@ Instructions for AI agents and developers working on this repository.
 ```
 clawbot/
 ├── docker/ironclaw/
-│   ├── Dockerfile          # Multi-stage image (dev/production)
+│   ├── Dockerfile          # Multi-stage: upstream IronClaw at a pinned commit + patches/, proxy, runner
 │   └── start.sh            # Container entrypoint — updates config, starts ironclaw serve
 ├── ironclaw/
 │   ├── config.toml         # IronClaw gateway config (models, auth, webui)
@@ -24,6 +24,9 @@ clawbot/
 │       ├── skills/redmine-time-tracking/projects.md
 │       │                   # Directory -> Redmine project map — gitignored; copy from .example
 │       └── skills/         # Custom skill playbooks (SKILL.md per skill)
+├── patches/ironclaw/       # Local changes applied on top of upstream nearai/ironclaw
+├── nginx/nginx.conf        # Web UI proxy (serves the logs page the binary does not embed)
+├── mcp-tls/                # TLS terminator for the internal MCP gateway (gen-certs.sh)
 ├── docker-compose.yml      # Main Compose file
 ├── docker-compose.gpu.yml  # GPU / vLLM variant
 ├── .env.default            # Template for .env — commit this, never commit .env
@@ -87,7 +90,7 @@ docker compose logs -f ironclaw
 | `ironclaw/workspace/**` (skills, identity, config) | `docker compose restart ironclaw` |
 | `ironclaw/config.toml` | `docker compose restart ironclaw` |
 | `docker/ironclaw/start.sh` | `docker compose build ironclaw && docker compose up -d` |
-| `docker/ironclaw/Dockerfile` | `docker compose build ironclaw && docker compose up -d` |
+| `docker/ironclaw/Dockerfile`, `patches/ironclaw/*` | `docker compose build && docker compose up -d` |
 | `docker-compose.yml` | `docker compose up -d` |
 
 ---

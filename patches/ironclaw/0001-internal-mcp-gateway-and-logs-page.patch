@@ -1,0 +1,2240 @@
+diff --git a/crates/ironclaw_first_party_extensions/assets/mcp-gateway/manifest.toml b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/manifest.toml
+new file mode 100644
+index 000000000..ea6554add
+--- /dev/null
++++ b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/manifest.toml
+@@ -0,0 +1,35 @@
++schema_version = "reborn.extension_manifest.v2"
++id = "mcp-gateway"
++name = "MCP Gateway"
++version = "0.1.0"
++description = "Aggregated in-house MCP servers (SEO, sales, OSINT, RAG/CMS, observability) behind one gateway."
++trust = "first_party_requested"
++
++# `url` is a placeholder: composition rewrites it from CLAWBOT_MCP_GATEWAY_URL
++# before the package enters the catalog. The extension is only registered when
++# that variable is set, so this value is never dialled.
++[runtime]
++kind = "mcp"
++transport = "http"
++url = "https://mcp-gateway.invalid/mcp/post"
++
++# Single template capability. On activation the runtime replaces the whole
++# capability list with what the gateway returns from `tools/list`, copying this
++# entry's effects/credentials/host-ports onto every discovered tool — see
++# `package_with_discovered_hosted_mcp_tools`. `visibility = "api"` keeps this
++# placeholder out of the model's tool surface when discovery fails and the
++# bundled manifest stays in place; discovered tools are published as `model`
++# regardless.
++[[capabilities]]
++id = "mcp-gateway.tools"
++description = "Template for tools discovered from the aggregated MCP gateway."
++effects = ["dispatch_capability", "network", "use_secret", "external_write"]
++runtime_credentials = [
++  { handle = "mcp_gateway_token", source = { type = "product_auth_account", provider = "mcp-gateway" }, audience = { scheme = "https", host_pattern = "mcp-gateway.invalid" }, target = { type = "header", name = "authorization", prefix = "Bearer " } },
++]
++default_permission = "ask"
++visibility = "api"
++input_schema_ref = "schemas/mcp-gateway/tools.input.v1.json"
++output_schema_ref = "schemas/mcp-gateway/tools.output.v1.json"
++prompt_doc_ref = "prompts/mcp-gateway/tools.md"
++required_host_ports = ["host.runtime.http_egress"]
+diff --git a/crates/ironclaw_first_party_extensions/assets/mcp-gateway/prompts/mcp-gateway/tools.md b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/prompts/mcp-gateway/tools.md
+new file mode 100644
+index 000000000..da1a01e75
+--- /dev/null
++++ b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/prompts/mcp-gateway/tools.md
+@@ -0,0 +1 @@
++Template entry for the aggregated MCP gateway. Real tools are discovered from the gateway at activation and namespaced `{server}__{tool}` (for example `seobot__crawl`, `sales__search`, `osintbot__osintbot_investigate`).
+diff --git a/crates/ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.input.v1.json b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.input.v1.json
+new file mode 100644
+index 000000000..d71778d91
+--- /dev/null
++++ b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.input.v1.json
+@@ -0,0 +1,6 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "type": "object",
++  "additionalProperties": true,
++  "description": "Placeholder input schema for the MCP gateway capability template. Discovered tools carry the input schema the gateway reports for each tool."
++}
+diff --git a/crates/ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.output.v1.json b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.output.v1.json
+new file mode 100644
+index 000000000..8e7c90177
+--- /dev/null
++++ b/crates/ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.output.v1.json
+@@ -0,0 +1,6 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "type": "object",
++  "additionalProperties": true,
++  "description": "Raw MCP tools/call result returned by the aggregated MCP gateway."
++}
+diff --git a/crates/ironclaw_llm/src/rig_adapter.rs b/crates/ironclaw_llm/src/rig_adapter.rs
+index 1ac5da23b..4e88a5aea 100644
+--- a/crates/ironclaw_llm/src/rig_adapter.rs
++++ b/crates/ironclaw_llm/src/rig_adapter.rs
+@@ -785,10 +785,29 @@ fn build_rig_request(
+ /// handling of duplicate JSON keys (most Python/Go servers use last-key-wins,
+ /// but this is not guaranteed by the JSON spec). The `effective_model_name()`
+ /// trait method should be consulted to determine the model actually used.
+-fn inject_model_override(rig_req: &mut RigRequest, model_override: Option<&str>) {
++fn inject_model_override(rig_req: &mut RigRequest, model_override: Option<&str>, base_model: &str) {
+     let Some(model) = model_override else {
+         return;
+     };
++
++    // Normalize both model names by converting to lowercase and stripping common prefixes
++    let normalize = |name: &str| -> String {
++        let name = name.to_lowercase();
++        if let Some(rest) = name.strip_prefix("openai/") {
++            rest.to_string()
++        } else if let Some(rest) = name.strip_prefix("ollama/") {
++            rest.to_string()
++        } else if let Some(rest) = name.strip_prefix("anthropic/") {
++            rest.to_string()
++        } else {
++            name
++        }
++    };
++
++    if normalize(model) == normalize(base_model) {
++        return;
++    }
++
+     match rig_req.additional_params {
+         Some(ref mut params) => {
+             if let Some(obj) = params.as_object_mut() {
+@@ -863,7 +882,7 @@ where
+         )?;
+ 
+         merge_additional_params(&mut rig_req, self.default_additional_params.as_ref());
+-        inject_model_override(&mut rig_req, model_override.as_deref());
++        inject_model_override(&mut rig_req, model_override.as_deref(), &self.model_name);
+ 
+         let response = self
+             .model
+@@ -925,7 +944,7 @@ where
+         )?;
+ 
+         merge_additional_params(&mut rig_req, self.default_additional_params.as_ref());
+-        inject_model_override(&mut rig_req, model_override.as_deref());
++        inject_model_override(&mut rig_req, model_override.as_deref(), &self.model_name);
+ 
+         let response = self
+             .model
+@@ -2758,7 +2777,7 @@ mod tests {
+     #[test]
+     fn test_inject_model_override_creates_params_when_none() {
+         let mut req = make_rig_request(None);
+-        inject_model_override(&mut req, Some("test-model"));
++        inject_model_override(&mut req, Some("test-model"), "base-model");
+ 
+         let params = req
+             .additional_params
+@@ -2771,7 +2790,7 @@ mod tests {
+         let mut req = make_rig_request(Some(serde_json::json!({
+             "cache_control": { "type": "ephemeral" },
+         })));
+-        inject_model_override(&mut req, Some("override-model"));
++        inject_model_override(&mut req, Some("override-model"), "base-model");
+ 
+         let params = req.additional_params.expect("should remain Some");
+         let obj = params.as_object().expect("should be object");
+@@ -2785,7 +2804,14 @@ mod tests {
+     #[test]
+     fn test_inject_model_override_noop_when_none() {
+         let mut req = make_rig_request(None);
+-        inject_model_override(&mut req, None);
++        inject_model_override(&mut req, None, "base-model");
++        assert!(req.additional_params.is_none());
++    }
++
++    #[test]
++    fn test_inject_model_override_noop_when_equal() {
++        let mut req = make_rig_request(None);
++        inject_model_override(&mut req, Some("openai/gpt-5"), "gpt-5");
+         assert!(req.additional_params.is_none());
+     }
+ 
+diff --git a/crates/ironclaw_reborn_cli/src/runtime/mod.rs b/crates/ironclaw_reborn_cli/src/runtime/mod.rs
+index 56e4f9bf4..f8102dda1 100644
+--- a/crates/ironclaw_reborn_cli/src/runtime/mod.rs
++++ b/crates/ironclaw_reborn_cli/src/runtime/mod.rs
+@@ -14,8 +14,8 @@ use ironclaw_reborn_composition::{
+ use ironclaw_reborn_composition::{
+     OAuthClientConfig, OperatorLogLayer, PollSettings, RebornBuildInput, RebornCompositionProfile,
+     RebornLocalRuntimeProfileOptions, RebornRuntimeIdentity, RebornRuntimeInput,
+-    TurnRunnerSettings, build_reborn_runtime, local_runtime_build_input_with_options,
+-    nearai_mcp_bootstrap_config_from_env,
++    TurnRunnerSettings, build_reborn_runtime, internal_mcp_gateway_bootstrap_config_from_env,
++    local_runtime_build_input_with_options, nearai_mcp_bootstrap_config_from_env,
+ };
+ use ironclaw_reborn_config::{
+     REBORN_PROFILE_ENV, RebornBootConfig, RebornProfile, seed_default_config_file_if_missing,
+@@ -456,6 +456,26 @@ pub(crate) fn build_services_input_with_options(
+             services_input = services_input.with_optional_nearai_mcp_bootstrap_config(
+                 nearai_mcp_bootstrap_config_from_env().context("NEAR AI MCP bootstrap config")?,
+             );
++            // CLAWBOT_MCP_GATEWAY_URL + MCP_GATEWAY_TOKEN. Without this call the
++            // extension is compiled in but never offered, and the agent has no
++            // gateway tools at all.
++            // The token has to land in the scope the runtime's turns use, so
++            // hand the bootstrap the [identity] tenant and default agent.
++            let identity = runtime_identity(config_file.as_ref());
++            let gateway_config = internal_mcp_gateway_bootstrap_config_from_env()
++                .context("internal MCP gateway bootstrap config")?
++                .map(|gateway| -> anyhow::Result<_> {
++                    Ok(gateway.with_runtime_identity(
++                        TenantId::new(&identity.tenant_id)
++                            .with_context(|| format!("[identity].tenant `{}` is invalid", identity.tenant_id))?,
++                        AgentId::new(&identity.agent_id).with_context(|| {
++                            format!("[identity].default_agent `{}` is invalid", identity.agent_id)
++                        })?,
++                    ))
++                })
++                .transpose()?;
++            services_input =
++                services_input.with_optional_internal_mcp_gateway_bootstrap_config(gateway_config);
+             services_input
+         }
+         RebornProfile::Production | RebornProfile::MigrationDryRun => {
+diff --git a/crates/ironclaw_reborn_composition/src/available_extensions.rs b/crates/ironclaw_reborn_composition/src/available_extensions.rs
+index 5af31a301..52b84b2a8 100644
+--- a/crates/ironclaw_reborn_composition/src/available_extensions.rs
++++ b/crates/ironclaw_reborn_composition/src/available_extensions.rs
+@@ -18,6 +18,10 @@ use crate::extension_credential_requirements::{
+     can_merge_lifecycle_credential_setup, merge_lifecycle_credential_setup,
+     product_auth_credential_source,
+ };
++use crate::internal_mcp_gateway::{
++    INTERNAL_MCP_GATEWAY_EXTENSION_ID, InternalMcpGatewayBootstrapConfig,
++    InternalMcpGatewayEndpoint,
++};
+ use crate::nearai_mcp::{
+     NearAiMcpBootstrapConfig, NearAiMcpEndpoint, nearai_mcp_endpoint_from_env,
+ };
+@@ -56,6 +60,8 @@ const WEB_ACCESS_MANIFEST: &str =
+     include_str!("../../ironclaw_first_party_extensions/assets/web-access/manifest.toml");
+ const NEARAI_MCP_MANIFEST: &str =
+     include_str!("../../ironclaw_first_party_extensions/assets/nearai-mcp/manifest.toml");
++const INTERNAL_MCP_GATEWAY_MANIFEST: &str =
++    include_str!("../../ironclaw_first_party_extensions/assets/mcp-gateway/manifest.toml");
+ 
+ #[derive(Debug, PartialEq, Eq)]
+ pub(crate) struct AvailableExtensionAsset {
+@@ -142,6 +148,14 @@ fn onboarding(package_id: &str) -> Option<LifecycleExtensionOnboarding> {
+             None,
+             "Install NEAR AI, then activate it to open the API key prompt and publish its MCP tools.",
+         )),
++        "mcp-gateway" => Some(onboarding_message(
++            "The internal MCP gateway is configured from the environment and enables itself on startup.",
++            Some(
++                "No manual credential entry is needed: the gateway bearer token comes from MCP_GATEWAY_TOKEN.",
++            ),
++            None,
++            "Activate it to re-run tool discovery against the gateway after the aggregated backends change.",
++        )),
+         "web-access" => Some(onboarding_message(
+             "Web Access does not need credentials. Activate it to make web search and saved-result retrieval tools available.",
+             Some("No credentials are required for Web Access."),
+@@ -255,13 +269,14 @@ impl AvailableExtensionCatalog {
+ 
+     #[cfg(test)]
+     pub(crate) fn from_first_party_assets() -> Result<Self, ProductWorkflowError> {
+-        Self::from_first_party_assets_with_nearai_mcp_config(None)
++        Self::from_first_party_assets_with_env_mcp_configs(None, None)
+     }
+ 
+-    pub(crate) fn from_first_party_assets_with_nearai_mcp_config(
++    pub(crate) fn from_first_party_assets_with_env_mcp_configs(
+         nearai_mcp_config: Option<&NearAiMcpBootstrapConfig>,
++        internal_mcp_gateway_config: Option<&InternalMcpGatewayBootstrapConfig>,
+     ) -> Result<Self, ProductWorkflowError> {
+-        Ok(Self::from_packages(vec![
++        let mut packages = vec![
+             github_package()?,
+             notion_mcp_package()?,
+             web_access_package()?,
+@@ -272,7 +287,14 @@ impl AvailableExtensionCatalog {
+             google_sheets_package()?,
+             google_slides_package()?,
+             gmail_package()?,
+-        ]))
++        ];
++        // Unlike the others this package is conditional: it only exists when the
++        // operator configured a gateway URL. That absence is what keeps the
++        // private-target allowance in `crate::mcp` unreachable by default.
++        if let Some(config) = internal_mcp_gateway_config {
++            packages.push(internal_mcp_gateway_package(config)?);
++        }
++        Ok(Self::from_packages(packages))
+     }
+ 
+     pub(crate) fn extend(&mut self, other: Self) {
+@@ -397,6 +419,19 @@ fn nearai_mcp_package(
+     bundled_extension_package("nearai", "NEAR AI", &manifest, nearai_mcp_assets(&manifest))
+ }
+ 
++fn internal_mcp_gateway_package(
++    config: &InternalMcpGatewayBootstrapConfig,
++) -> Result<AvailableExtensionPackage, ProductWorkflowError> {
++    let endpoint = config.endpoint().map_err(map_binding_error)?;
++    let manifest = internal_mcp_gateway_manifest_toml_for_endpoint(&endpoint)?;
++    bundled_extension_package(
++        INTERNAL_MCP_GATEWAY_EXTENSION_ID,
++        "MCP Gateway",
++        &manifest,
++        internal_mcp_gateway_assets(&manifest),
++    )
++}
++
+ fn google_calendar_package() -> Result<AvailableExtensionPackage, ProductWorkflowError> {
+     bundled_extension_package(
+         "google-calendar",
+@@ -539,6 +574,71 @@ fn nearai_mcp_manifest_toml_for_endpoint(
+     })
+ }
+ 
++/// Rewrites the bundled placeholder manifest with the operator-configured
++/// endpoint. Mirrors [`nearai_mcp_manifest_toml_for_endpoint`]: the runtime URL
++/// and the runtime-credential audience must agree, or the egress planner drops
++/// the bearer injection and the gateway answers 401.
++fn internal_mcp_gateway_manifest_toml_for_endpoint(
++    endpoint: &InternalMcpGatewayEndpoint,
++) -> Result<String, ProductWorkflowError> {
++    let mut manifest = toml::from_str::<Value>(INTERNAL_MCP_GATEWAY_MANIFEST).map_err(|error| {
++        map_binding_error(format!(
++            "bundled MCP gateway manifest TOML is invalid: {error}"
++        ))
++    })?;
++    let runtime = manifest
++        .get_mut("runtime")
++        .and_then(Value::as_table_mut)
++        .ok_or_else(|| map_binding_error("bundled MCP gateway manifest lacks runtime table"))?;
++    runtime.insert("url".to_string(), Value::String(endpoint.url.clone()));
++
++    let capabilities = manifest
++        .get_mut("capabilities")
++        .and_then(Value::as_array_mut)
++        .ok_or_else(|| {
++            map_binding_error("bundled MCP gateway manifest lacks capabilities array")
++        })?;
++    let template = capabilities
++        .first_mut()
++        .and_then(Value::as_table_mut)
++        .ok_or_else(|| {
++            map_binding_error("bundled MCP gateway manifest lacks capability template")
++        })?;
++    let runtime_credentials = template
++        .get_mut("runtime_credentials")
++        .and_then(Value::as_array_mut)
++        .ok_or_else(|| {
++            map_binding_error("bundled MCP gateway manifest lacks runtime credentials")
++        })?;
++    let credential = runtime_credentials
++        .first_mut()
++        .and_then(Value::as_table_mut)
++        .ok_or_else(|| {
++            map_binding_error("bundled MCP gateway manifest lacks runtime credential")
++        })?;
++    let audience = credential
++        .get_mut("audience")
++        .and_then(Value::as_table_mut)
++        .ok_or_else(|| {
++            map_binding_error("bundled MCP gateway manifest lacks runtime credential audience")
++        })?;
++    audience.insert(
++        "host_pattern".to_string(),
++        Value::String(endpoint.host_pattern.clone()),
++    );
++    if let Some(port) = endpoint.port {
++        audience.insert("port".to_string(), Value::Integer(i64::from(port)));
++    } else {
++        audience.remove("port");
++    }
++
++    toml::to_string(&manifest).map_err(|error| {
++        map_binding_error(format!(
++            "bundled MCP gateway manifest TOML render failed: {error}"
++        ))
++    })
++}
++
+ fn bundled_extension_package(
+     id: &str,
+     label: &str,
+@@ -832,6 +932,30 @@ fn nearai_mcp_assets(manifest: &str) -> Vec<AvailableExtensionAsset> {
+     ]
+ }
+ 
++fn internal_mcp_gateway_assets(manifest: &str) -> Vec<AvailableExtensionAsset> {
++    vec![
++        bytes_asset("manifest.toml", manifest.as_bytes()),
++        bytes_asset(
++            "schemas/mcp-gateway/tools.input.v1.json",
++            include_bytes!(
++                "../../ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.input.v1.json"
++            ),
++        ),
++        bytes_asset(
++            "schemas/mcp-gateway/tools.output.v1.json",
++            include_bytes!(
++                "../../ironclaw_first_party_extensions/assets/mcp-gateway/schemas/mcp-gateway/tools.output.v1.json"
++            ),
++        ),
++        bytes_asset(
++            "prompts/mcp-gateway/tools.md",
++            include_bytes!(
++                "../../ironclaw_first_party_extensions/assets/mcp-gateway/prompts/mcp-gateway/tools.md"
++            ),
++        ),
++    ]
++}
++
+ fn google_calendar_assets() -> Vec<AvailableExtensionAsset> {
+     vec![
+         bytes_asset("manifest.toml", GOOGLE_CALENDAR_MANIFEST.as_bytes()),
+diff --git a/crates/ironclaw_reborn_composition/src/factory.rs b/crates/ironclaw_reborn_composition/src/factory.rs
+index b277e6486..58fa47f27 100644
+--- a/crates/ironclaw_reborn_composition/src/factory.rs
++++ b/crates/ironclaw_reborn_composition/src/factory.rs
+@@ -688,6 +688,7 @@ async fn build_local_dev(input: RebornBuildInput) -> Result<RebornServices, Rebo
+         oauth_provider_configs,
+         oauth_dcr_provider_configs,
+         nearai_mcp_bootstrap_config,
++        internal_mcp_gateway_bootstrap_config,
+         owner_id,
+         ..
+     } = input;
+@@ -782,6 +783,7 @@ async fn build_local_dev(input: RebornBuildInput) -> Result<RebornServices, Rebo
+         runtime_workspace_mounts.clone(),
+     ));
+     let owner_user_id_for_nearai_mcp = owner_user_id.clone();
++    let owner_user_id_for_internal_mcp_gateway = owner_user_id.clone();
+     let mut store_graph = build_local_dev_store_graph(RebornLocalDevStoreGraphInput {
+         filesystem: Arc::clone(&filesystem),
+         owner_user_id,
+@@ -934,8 +936,9 @@ async fn build_local_dev(input: RebornBuildInput) -> Result<RebornServices, Rebo
+         reason: format!("available extension catalog could not be loaded: {error}"),
+     })?;
+     available_extensions.extend(
+-        AvailableExtensionCatalog::from_first_party_assets_with_nearai_mcp_config(
++        AvailableExtensionCatalog::from_first_party_assets_with_env_mcp_configs(
+             nearai_mcp_bootstrap_config.as_ref(),
++            internal_mcp_gateway_bootstrap_config.as_ref(),
+         )
+         .map_err(|error| RebornBuildError::InvalidConfig {
+             reason: format!("first-party extension catalog could not be loaded: {error}"),
+@@ -983,6 +986,18 @@ async fn build_local_dev(input: RebornBuildInput) -> Result<RebornServices, Rebo
+         &owner_user_id_for_nearai_mcp,
+     )
+     .await?;
++    crate::internal_mcp_gateway::bootstrap_local_dev_internal_mcp_gateway(
++        internal_mcp_gateway_bootstrap_config,
++        &product_auth,
++        &extension_management,
++        product_auth_runtime_ports.runtime_http_egress(),
++        // The host services' handler, not the product-auth ports' one: only
++        // this one carries the runtime credential account resolver attached
++        // above, which InjectCredentialAccountOnce needs.
++        services.obligation_handler(),
++        &owner_user_id_for_internal_mcp_gateway,
++    )
++    .await?;
+     if let Some(local_runtime) = Arc::get_mut(&mut store_graph.local_runtime) {
+         local_runtime.extension_management = Some(Arc::clone(&extension_management));
+         local_runtime.runtime_http_egress = Some(product_auth_runtime_ports.runtime_http_egress());
+@@ -2429,6 +2444,7 @@ async fn build_production_shaped(
+         oauth_provider_configs,
+         oauth_dcr_provider_configs,
+         nearai_mcp_bootstrap_config: _,
++        internal_mcp_gateway_bootstrap_config: _,
+     } = input;
+     #[cfg(any(feature = "libsql", feature = "postgres"))]
+     let wiring_config = production_config(
+diff --git a/crates/ironclaw_reborn_composition/src/input.rs b/crates/ironclaw_reborn_composition/src/input.rs
+index 4663663bb..eef439d29 100644
+--- a/crates/ironclaw_reborn_composition/src/input.rs
++++ b/crates/ironclaw_reborn_composition/src/input.rs
+@@ -182,6 +182,8 @@ pub struct RebornBuildInput {
+     pub(crate) oauth_provider_configs: Vec<OAuthProviderBackendConfig>,
+     pub(crate) oauth_dcr_provider_configs: Vec<OAuthDcrProviderBackendConfig>,
+     pub(crate) nearai_mcp_bootstrap_config: Option<crate::nearai_mcp::NearAiMcpBootstrapConfig>,
++    pub(crate) internal_mcp_gateway_bootstrap_config:
++        Option<crate::internal_mcp_gateway::InternalMcpGatewayBootstrapConfig>,
+ }
+ 
+ pub(crate) enum RebornStorageInput {
+@@ -522,6 +524,14 @@ impl RebornBuildInput {
+         self
+     }
+ 
++    pub fn with_optional_internal_mcp_gateway_bootstrap_config(
++        mut self,
++        config: Option<crate::internal_mcp_gateway::InternalMcpGatewayBootstrapConfig>,
++    ) -> Self {
++        self.internal_mcp_gateway_bootstrap_config = config;
++        self
++    }
++
+     #[cfg(all(test, feature = "slack-v2-host-beta"))]
+     pub(crate) fn with_host_runtime_http_egress_for_test(
+         mut self,
+@@ -634,6 +644,7 @@ impl RebornBuildInput {
+             oauth_provider_configs: Vec::new(),
+             oauth_dcr_provider_configs: Vec::new(),
+             nearai_mcp_bootstrap_config: None,
++            internal_mcp_gateway_bootstrap_config: None,
+         }
+     }
+ }
+diff --git a/crates/ironclaw_reborn_composition/src/internal_mcp_gateway.rs b/crates/ironclaw_reborn_composition/src/internal_mcp_gateway.rs
+new file mode 100644
+index 000000000..6e58d15cb
+--- /dev/null
++++ b/crates/ironclaw_reborn_composition/src/internal_mcp_gateway.rs
+@@ -0,0 +1,672 @@
++//! Operator-configured internal MCP gateway.
++//!
++//! Mirrors [`crate::nearai_mcp`] — an env-configured hosted MCP provider that
++//! composition registers in the extension catalog and auto-enables on boot —
++//! with three differences:
++//!
++//! - the endpoint URL is taken verbatim (path included), because the gateway
++//!   serves JSON-RPC on `/mcp/post` rather than the `/mcp` NEAR AI expects;
++//! - private address ranges are allowed, because the gateway is a service on
++//!   the operator's own Docker network (see [`crate::mcp`] for the single
++//!   egress-policy branch that permits it);
++//! - activation runs hosted MCP discovery instead of the static path, so the
++//!   aggregated backends' tools are published without being enumerated in the
++//!   bundled manifest.
++//!
++//! The extension only exists when `CLAWBOT_MCP_GATEWAY_URL` is set. Without it
++//! composition never builds the package, so nothing downstream can reach a
++//! private target through this provider.
++
++use std::{net::IpAddr, sync::Arc};
++
++use async_trait::async_trait;
++use ironclaw_capabilities::{
++    CapabilityObligationHandler, CapabilityObligationPhase, CapabilityObligationRequest,
++};
++
++use ironclaw_auth::{
++    AuthProductScope, AuthProviderId, AuthSurface, CredentialAccountUpdateBinding,
++};
++use ironclaw_host_api::{
++    AgentId, CapabilitySet, CorrelationId, ExecutionContext, ExtensionId, InvocationId, MountView,
++    Obligation, ResourceEstimate, ResourceScope, RuntimeCredentialAccountProviderId,
++    RuntimeCredentialAccountSetup, RuntimeCredentialSource, RuntimeHttpEgress,
++    RuntimeHttpEgressError, RuntimeHttpEgressRequest, RuntimeHttpEgressResponse, TenantId,
++    TrustClass, UserId,
++};
++use ironclaw_product_workflow::{
++    ExtensionCredentialSetupService, ExtensionCredentialSubmitRequest, LifecyclePackageKind,
++    LifecyclePackageRef, LifecyclePhase, RebornServicesError, RebornServicesErrorCode,
++    RebornServicesErrorKind,
++};
++use secrecy::{ExposeSecret, SecretString};
++
++use crate::{
++    RebornBuildError, RebornProductAuthServices,
++    extension_activation_credentials::RuntimeExtensionActivationCredentialGate,
++    extension_lifecycle::{ExtensionActivationMode, RebornLocalExtensionManagementPort},
++    webui_extension_credentials::ProductAuthExtensionCredentialSetup,
++};
++
++/// Extension / product-auth provider id for the internal gateway. Shared with
++/// [`crate::mcp`], which keys its private-target allowance on this exact value.
++pub(crate) const INTERNAL_MCP_GATEWAY_EXTENSION_ID: &str = "mcp-gateway";
++
++const INTERNAL_MCP_GATEWAY_URL_ENV: &str = "CLAWBOT_MCP_GATEWAY_URL";
++const INTERNAL_MCP_GATEWAY_TOKEN_ENV: &str = "MCP_GATEWAY_TOKEN";
++
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct InternalMcpGatewayEndpoint {
++    pub(crate) url: String,
++    pub(crate) host_pattern: String,
++    pub(crate) port: Option<u16>,
++}
++
++/// Validated URL + bearer token for the internal gateway.
++#[derive(Clone, Debug)]
++pub struct InternalMcpGatewayBootstrapConfig {
++    url: String,
++    token: SecretString,
++    /// The tenant and agent the runtime's turns run under (`[identity]`).
++    /// The credential account must live in that scope, or the runtime
++    /// credential gate never finds it; `None` keeps the local default.
++    runtime_identity: Option<(TenantId, AgentId)>,
++}
++
++impl InternalMcpGatewayBootstrapConfig {
++    pub fn new(
++        url: impl Into<String>,
++        token: SecretString,
++    ) -> Result<Self, InternalMcpGatewayBootstrapConfigError> {
++        let url = url.into().trim().to_string();
++        if url.is_empty() {
++            return Err(InternalMcpGatewayBootstrapConfigError::MissingUrl);
++        }
++        if token.expose_secret().trim().is_empty() {
++            return Err(InternalMcpGatewayBootstrapConfigError::MissingToken);
++        }
++        // Validate eagerly so a malformed URL fails at startup with a clear
++        // reason rather than at first tool call.
++        internal_mcp_gateway_endpoint_from_url(&url)
++            .map_err(InternalMcpGatewayBootstrapConfigError::InvalidUrl)?;
++        Ok(Self {
++            url,
++            token,
++            runtime_identity: None,
++        })
++    }
++
++    /// Builds a config from optionally-present parts. Both absent means the
++    /// operator has not opted in; a URL without a token is a misconfiguration.
++    pub fn from_optional_parts(
++        url: Option<impl Into<String>>,
++        token: Option<SecretString>,
++    ) -> Result<Option<Self>, InternalMcpGatewayBootstrapConfigError> {
++        let url = url
++            .map(Into::into)
++            .map(|value| value.trim().to_string())
++            .filter(|value| !value.is_empty());
++        let token = token.filter(|value| !value.expose_secret().trim().is_empty());
++        match (url, token) {
++            (Some(url), Some(token)) => Self::new(url, token).map(Some),
++            (None, _) => Ok(None),
++            (Some(_), None) => Err(InternalMcpGatewayBootstrapConfigError::MissingToken),
++        }
++    }
++
++    /// Binds the credential to the scope the runtime's turns use.
++    pub fn with_runtime_identity(mut self, tenant_id: TenantId, agent_id: AgentId) -> Self {
++        self.runtime_identity = Some((tenant_id, agent_id));
++        self
++    }
++
++    fn resource_scope(&self, owner_user_id: &UserId) -> Result<ResourceScope, String> {
++        match &self.runtime_identity {
++            // Mirrors the WebUI caller scope (agent set, no project), which is
++            // what the runtime credential gate selects accounts by.
++            Some((tenant_id, agent_id)) => Ok(ResourceScope {
++                tenant_id: tenant_id.clone(),
++                user_id: owner_user_id.clone(),
++                agent_id: Some(agent_id.clone()),
++                project_id: None,
++                mission_id: None,
++                thread_id: None,
++                invocation_id: InvocationId::new(),
++            }),
++            None => ResourceScope::local_default(owner_user_id.clone(), InvocationId::new())
++                .map_err(|error| error.to_string()),
++        }
++    }
++
++    pub(crate) fn endpoint(&self) -> Result<InternalMcpGatewayEndpoint, String> {
++        internal_mcp_gateway_endpoint_from_url(&self.url)
++    }
++}
++
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub enum InternalMcpGatewayBootstrapConfigError {
++    MissingUrl,
++    MissingToken,
++    InvalidUrl(String),
++}
++
++impl std::fmt::Display for InternalMcpGatewayBootstrapConfigError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        match self {
++            Self::MissingUrl => write!(f, "{INTERNAL_MCP_GATEWAY_URL_ENV} must not be empty"),
++            Self::MissingToken => write!(
++                f,
++                "{INTERNAL_MCP_GATEWAY_TOKEN_ENV} is required when {INTERNAL_MCP_GATEWAY_URL_ENV} is set"
++            ),
++            Self::InvalidUrl(reason) => write!(f, "{reason}"),
++        }
++    }
++}
++
++impl std::error::Error for InternalMcpGatewayBootstrapConfigError {}
++
++pub fn internal_mcp_gateway_bootstrap_config_from_env()
++-> Result<Option<InternalMcpGatewayBootstrapConfig>, InternalMcpGatewayBootstrapConfigError> {
++    let url = ironclaw_common::env_helpers::env_or_override(INTERNAL_MCP_GATEWAY_URL_ENV)
++        .map(|value| value.trim().to_string())
++        .filter(|value| !value.is_empty());
++    let token = ironclaw_common::env_helpers::env_or_override(INTERNAL_MCP_GATEWAY_TOKEN_ENV)
++        .map(|value| value.trim().to_string())
++        .filter(|value| !value.is_empty())
++        .map(SecretString::from);
++    InternalMcpGatewayBootstrapConfig::from_optional_parts(url, token)
++}
++
++/// Parses the operator-supplied gateway URL.
++///
++/// https is mandatory: the hosted-MCP URL check, the discovery check, and the
++/// runtime-credential audience all reject plain http, so a cleartext endpoint
++/// would fail later and less legibly. Unlike the NEAR AI validator the path is
++/// preserved verbatim — the gateway's JSON-RPC entrypoint is `/mcp/post`.
++/// Private and loopback ranges are deliberately accepted; the coarse
++/// link-local / multicast / documentation guard stays.
++pub(crate) fn internal_mcp_gateway_endpoint_from_url(
++    raw: &str,
++) -> Result<InternalMcpGatewayEndpoint, String> {
++    let url = url::Url::parse(raw.trim())
++        .map_err(|error| format!("{INTERNAL_MCP_GATEWAY_URL_ENV} must be an absolute URL: {error}"))?;
++    if url.scheme() != "https" {
++        return Err(format!("{INTERNAL_MCP_GATEWAY_URL_ENV} must use https"));
++    }
++    if !url.username().is_empty() || url.password().is_some() {
++        return Err(format!(
++            "{INTERNAL_MCP_GATEWAY_URL_ENV} must not include userinfo"
++        ));
++    }
++    if url.query().is_some() || url.fragment().is_some() {
++        return Err(format!(
++            "{INTERNAL_MCP_GATEWAY_URL_ENV} must not include query or fragment components"
++        ));
++    }
++
++    let host = url
++        .host_str()
++        .ok_or_else(|| format!("{INTERNAL_MCP_GATEWAY_URL_ENV} must include a host"))?
++        .to_ascii_lowercase();
++    let ip = host.parse::<IpAddr>().ok();
++    if ip.is_some_and(is_forbidden_endpoint_ip) {
++        return Err(format!(
++            "{INTERNAL_MCP_GATEWAY_URL_ENV} host is not allowed"
++        ));
++    }
++    if matches!(ip, Some(IpAddr::V6(_))) {
++        return Err(format!(
++            "{INTERNAL_MCP_GATEWAY_URL_ENV} IPv6 hosts are not supported yet"
++        ));
++    }
++
++    Ok(InternalMcpGatewayEndpoint {
++        url: url.to_string(),
++        host_pattern: host,
++        port: url.port(),
++    })
++}
++
++/// Coarse guard copied from [`crate::nearai_mcp`]. Private and loopback ranges
++/// are intentionally missing: reaching them is the point of this provider.
++fn is_forbidden_endpoint_ip(ip: IpAddr) -> bool {
++    match ip {
++        IpAddr::V4(ip) => {
++            ip.is_link_local()
++                || ip.is_broadcast()
++                || ip.is_documentation()
++                || ip.is_multicast()
++                || ip.octets()[0] == 0
++        }
++        IpAddr::V6(ip) => {
++            ip.is_unspecified()
++                || ip.is_unicast_link_local()
++                || ip.is_multicast()
++                || is_documentation_v6(ip)
++        }
++    }
++}
++
++fn is_documentation_v6(ip: std::net::Ipv6Addr) -> bool {
++    let segments = ip.segments();
++    segments[0] == 0x2001 && segments[1] == 0x0db8
++}
++
++/// Satisfies a boot-time discovery request's obligations before the runtime
++/// egress sees it.
++///
++/// The runtime egress only serves what an obligation handler has staged for
++/// the request's scope and capability: the network policy
++/// (`ApplyNetworkPolicy`) and the gateway token (`InjectCredentialAccountOnce`).
++/// Tool calls get both from the dispatcher; boot-time discovery has no
++/// dispatcher, so without this every discovery request fails, first as
++/// `network_policy_missing`, then as `credential_unavailable`.
++struct ObligationStagingEgress {
++    inner: Arc<dyn RuntimeHttpEgress>,
++    obligations: Arc<dyn CapabilityObligationHandler>,
++}
++
++#[async_trait]
++impl RuntimeHttpEgress for ObligationStagingEgress {
++    async fn execute(
++        &self,
++        request: RuntimeHttpEgressRequest,
++    ) -> Result<RuntimeHttpEgressResponse, RuntimeHttpEgressError> {
++        let denied = |reason: &str| RuntimeHttpEgressError::Request {
++            reason: format!("internal MCP gateway discovery: {reason}"),
++            request_bytes: 0,
++            response_bytes: 0,
++        };
++        let extension_id = ExtensionId::new(INTERNAL_MCP_GATEWAY_EXTENSION_ID)
++            .map_err(|_| denied("invalid extension id"))?;
++        let provider = RuntimeCredentialAccountProviderId::new(INTERNAL_MCP_GATEWAY_EXTENSION_ID)
++            .map_err(|_| denied("invalid provider id"))?;
++
++        let mut obligations = vec![Obligation::ApplyNetworkPolicy {
++            policy: request.network_policy.clone(),
++        }];
++        for injection in &request.credential_injections {
++            if matches!(injection.source, RuntimeCredentialSource::StagedObligation { .. }) {
++                obligations.push(Obligation::InjectCredentialAccountOnce {
++                    handle: injection.handle.clone(),
++                    provider: provider.clone(),
++                    setup: RuntimeCredentialAccountSetup::default(),
++                    provider_scopes: Vec::new(),
++                    requester_extension: extension_id.clone(),
++                });
++            }
++        }
++
++        let resource_scope = request.scope.clone();
++        let context = ExecutionContext {
++            invocation_id: resource_scope.invocation_id,
++            correlation_id: CorrelationId::new(),
++            process_id: None,
++            parent_process_id: None,
++            tenant_id: resource_scope.tenant_id.clone(),
++            user_id: resource_scope.user_id.clone(),
++            agent_id: resource_scope.agent_id.clone(),
++            project_id: resource_scope.project_id.clone(),
++            mission_id: resource_scope.mission_id.clone(),
++            thread_id: resource_scope.thread_id.clone(),
++            extension_id,
++            runtime: request.runtime,
++            trust: TrustClass::System,
++            grants: CapabilitySet::default(),
++            mounts: MountView::default(),
++            resource_scope,
++        };
++        context
++            .validate()
++            .map_err(|_| denied("invalid execution context"))?;
++        let estimate = ResourceEstimate {
++            network_egress_bytes: request.network_policy.max_egress_bytes,
++            ..ResourceEstimate::default()
++        };
++        self.obligations
++            .satisfy(CapabilityObligationRequest {
++                phase: CapabilityObligationPhase::Invoke,
++                context: &context,
++                capability_id: &request.capability_id,
++                estimate: &estimate,
++                obligations: &obligations,
++            })
++            .await
++            .map_err(|error| {
++                tracing::debug!(%error, "internal MCP gateway discovery obligations failed");
++                denied("obligations were not satisfied")
++            })?;
++        self.inner.execute(request).await
++    }
++}
++
++/// Installs, credentials, and activates the internal gateway extension on boot.
++///
++/// Activation runs [`ExtensionActivationMode::HostedMcpDiscovery`] so the
++/// aggregated backends' tools are published immediately. A gateway that is down
++/// yields a transient discovery failure, which the lifecycle service downgrades
++/// to "keep the bundled manifest" — boot still succeeds and re-activating from
++/// the extensions UI retries discovery.
++pub(crate) async fn bootstrap_local_dev_internal_mcp_gateway(
++    config: Option<InternalMcpGatewayBootstrapConfig>,
++    product_auth: &Arc<RebornProductAuthServices>,
++    extension_management: &Arc<RebornLocalExtensionManagementPort>,
++    runtime_http_egress: Arc<dyn RuntimeHttpEgress>,
++    obligation_handler: Arc<dyn CapabilityObligationHandler>,
++    owner_user_id: &UserId,
++) -> Result<(), RebornBuildError> {
++    let Some(config) = config else {
++        return Ok(());
++    };
++    let runtime_http_egress: Arc<dyn RuntimeHttpEgress> = Arc::new(ObligationStagingEgress {
++        inner: runtime_http_egress,
++        obligations: obligation_handler,
++    });
++    config
++        .endpoint()
++        .map_err(|error| RebornBuildError::InvalidConfig {
++            reason: format!(
++                "internal MCP gateway auto-enable skipped: invalid {INTERNAL_MCP_GATEWAY_URL_ENV}: {error}"
++            ),
++        })?;
++
++    let package_ref = LifecyclePackageRef::new(
++        LifecyclePackageKind::Extension,
++        INTERNAL_MCP_GATEWAY_EXTENSION_ID,
++    )
++    .map_err(|error| RebornBuildError::InvalidConfig {
++        reason: format!("internal MCP gateway package ref is invalid: {error}"),
++    })?;
++    let phase = extension_management
++        .project(package_ref.clone())
++        .await
++        .map_err(|error| RebornBuildError::InvalidConfig {
++            reason: format!("internal MCP gateway extension projection failed: {error}"),
++        })?
++        .phase;
++    match phase {
++        LifecyclePhase::Discovered | LifecyclePhase::Installed | LifecyclePhase::Active => {}
++        LifecyclePhase::Disabled => {
++            tracing::debug!(
++                "internal MCP gateway credentials are present, but the extension is disabled; preserving explicit disabled state"
++            );
++            return Ok(());
++        }
++        other => {
++            tracing::warn!(
++                phase = ?other,
++                "internal MCP gateway credentials are present, but the extension is not in an auto-activatable phase"
++            );
++            return Ok(());
++        }
++    }
++
++    let resource_scope =
++        config
++            .resource_scope(owner_user_id)
++            .map_err(|error| RebornBuildError::InvalidConfig {
++                reason: format!(
++                    "internal MCP gateway auto-enable scope could not be built: {error}"
++                ),
++            })?;
++    let scope = AuthProductScope::new(resource_scope.clone(), AuthSurface::Api);
++    let provider = AuthProviderId::new(INTERNAL_MCP_GATEWAY_EXTENSION_ID).map_err(|error| {
++        RebornBuildError::InvalidConfig {
++            reason: format!("internal MCP gateway provider id is invalid: {error}"),
++        }
++    })?;
++    let existing_account = product_auth
++        .credential_account_record_source()
++        .accounts_for_owner(&scope)
++        .await
++        .map_err(|error| RebornBuildError::InvalidConfig {
++            reason: format!("internal MCP gateway product-auth lookup failed: {error}"),
++        })?
++        .into_iter()
++        .filter(|account| account.provider == provider)
++        .max_by_key(|account| (account.updated_at, account.created_at, account.id));
++    // An update must name the account's own scope exactly: scope equality
++    // includes the invocation id, and a fresh one is minted every boot, so
++    // updating under the new scope was refused as cross-scope and the
++    // bootstrap stopped before discovery on every restart.
++    let submit_scope = existing_account
++        .as_ref()
++        .map(|account| account.scope.clone())
++        .unwrap_or(scope);
++    let existing_account = existing_account.map(|account| CredentialAccountUpdateBinding {
++        account_id: account.id,
++        ownership: account.ownership,
++        owner_extension: account.owner_extension.clone(),
++        granted_extensions: account.granted_extensions.clone(),
++    });
++
++    let credential_submit = ProductAuthExtensionCredentialSetup::new(Arc::clone(product_auth))
++        .submit_manual_token(ExtensionCredentialSubmitRequest {
++            scope: submit_scope,
++            provider,
++            label: "Internal MCP gateway token".to_string(),
++            requester_extension: ExtensionId::new(INTERNAL_MCP_GATEWAY_EXTENSION_ID).map_err(
++                |error| RebornBuildError::InvalidConfig {
++                    reason: format!(
++                        "internal MCP gateway requester extension id is invalid: {error}"
++                    ),
++                },
++            )?,
++            existing_account,
++            secret: config.token,
++        })
++        .await;
++    if let Err(error) = credential_submit {
++        if is_internal_mcp_gateway_disabled_or_removed(&error) {
++            tracing::debug!(
++                "internal MCP gateway credentials are present, but the extension participant is disabled or removed; preserving explicit operator state"
++            );
++            return Ok(());
++        }
++        return Err(RebornBuildError::InvalidConfig {
++            reason: format!("internal MCP gateway product-auth credential submit failed: {error:?}"),
++        });
++    }
++
++    if phase == LifecyclePhase::Discovered {
++        extension_management
++            .install(package_ref.clone())
++            .await
++            .map_err(|error| RebornBuildError::InvalidConfig {
++                reason: format!("internal MCP gateway extension install failed: {error}"),
++            })?;
++    }
++    if !matches!(
++        phase,
++        LifecyclePhase::Discovered | LifecyclePhase::Installed | LifecyclePhase::Active
++    ) {
++        return Ok(());
++    }
++    let activation = extension_management
++        .activate_with_credential_gate(
++            package_ref,
++            ExtensionActivationMode::HostedMcpDiscovery {
++                scope: resource_scope.clone(),
++                runtime_http_egress,
++            },
++            RuntimeExtensionActivationCredentialGate::new(
++                resource_scope,
++                product_auth.runtime_credential_account_selection_service(),
++            ),
++        )
++        .await;
++    match activation {
++        Ok(_) => Ok(()),
++        // Discovered tools live in memory only, so an extension that was
++        // already active is re-activated to re-run discovery after a restart.
++        // That re-run is best effort: failing it must not stop the boot.
++        Err(error) if phase == LifecyclePhase::Active => {
++            tracing::warn!(%error, "internal MCP gateway re-discovery after restart failed");
++            Ok(())
++        }
++        Err(error) => Err(RebornBuildError::InvalidConfig {
++            reason: format!("internal MCP gateway extension activation failed: {error}"),
++        }),
++    }
++}
++
++fn is_internal_mcp_gateway_disabled_or_removed(error: &RebornServicesError) -> bool {
++    error.code == RebornServicesErrorCode::Forbidden
++        && error.kind == RebornServicesErrorKind::ParticipantDenied
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    struct InternalMcpGatewayEnvGuard {
++        _lock: std::sync::MutexGuard<'static, ()>,
++    }
++
++    impl InternalMcpGatewayEnvGuard {
++        fn new() -> Self {
++            let lock = ironclaw_common::env_helpers::lock_env();
++            assert!(
++                std::env::var_os(INTERNAL_MCP_GATEWAY_URL_ENV).is_none(),
++                "{INTERNAL_MCP_GATEWAY_URL_ENV} must be unset for deterministic env tests"
++            );
++            assert!(
++                std::env::var_os(INTERNAL_MCP_GATEWAY_TOKEN_ENV).is_none(),
++                "{INTERNAL_MCP_GATEWAY_TOKEN_ENV} must be unset for deterministic env tests"
++            );
++            ironclaw_common::env_helpers::remove_runtime_env(INTERNAL_MCP_GATEWAY_URL_ENV);
++            ironclaw_common::env_helpers::remove_runtime_env(INTERNAL_MCP_GATEWAY_TOKEN_ENV);
++            Self { _lock: lock }
++        }
++
++        fn set_url(&self, value: &str) {
++            ironclaw_common::env_helpers::set_runtime_env(INTERNAL_MCP_GATEWAY_URL_ENV, value);
++        }
++
++        fn set_token(&self, value: &str) {
++            ironclaw_common::env_helpers::set_runtime_env(INTERNAL_MCP_GATEWAY_TOKEN_ENV, value);
++        }
++    }
++
++    impl Drop for InternalMcpGatewayEnvGuard {
++        fn drop(&mut self) {
++            ironclaw_common::env_helpers::remove_runtime_env(INTERNAL_MCP_GATEWAY_URL_ENV);
++            ironclaw_common::env_helpers::remove_runtime_env(INTERNAL_MCP_GATEWAY_TOKEN_ENV);
++        }
++    }
++
++    #[test]
++    fn endpoint_preserves_gateway_path_and_port() {
++        let endpoint = internal_mcp_gateway_endpoint_from_url(
++            "https://mcp-gateway.clawbot.internal:8443/mcp/post",
++        )
++        .expect("gateway endpoint");
++
++        assert_eq!(
++            endpoint.url,
++            "https://mcp-gateway.clawbot.internal:8443/mcp/post"
++        );
++        assert_eq!(endpoint.host_pattern, "mcp-gateway.clawbot.internal");
++        assert_eq!(endpoint.port, Some(8443));
++    }
++
++    #[test]
++    fn endpoint_allows_private_and_loopback_hosts() {
++        // The whole point of this provider: the NEAR AI validator's public-only
++        // stance is deliberately not inherited.
++        let private = internal_mcp_gateway_endpoint_from_url("https://172.18.0.7:8443/mcp/post")
++            .expect("private IP");
++        let loopback = internal_mcp_gateway_endpoint_from_url("https://127.0.0.1:8443/mcp/post")
++            .expect("loopback IP");
++
++        assert_eq!(private.host_pattern, "172.18.0.7");
++        assert_eq!(loopback.port, Some(8443));
++    }
++
++    #[test]
++    fn endpoint_rejects_http_userinfo_query_and_fragment() {
++        assert!(internal_mcp_gateway_endpoint_from_url("http://gateway.internal/mcp/post").is_err());
++        assert!(
++            internal_mcp_gateway_endpoint_from_url("https://user@gateway.internal/mcp/post")
++                .is_err()
++        );
++        assert!(
++            internal_mcp_gateway_endpoint_from_url("https://gateway.internal/mcp/post?a=1").is_err()
++        );
++        assert!(
++            internal_mcp_gateway_endpoint_from_url("https://gateway.internal/mcp/post#frag")
++                .is_err()
++        );
++        assert!(internal_mcp_gateway_endpoint_from_url("not-a-url").is_err());
++    }
++
++    #[test]
++    fn endpoint_rejects_link_local_and_multicast_hosts() {
++        assert!(internal_mcp_gateway_endpoint_from_url("https://169.254.169.254/mcp/post").is_err());
++        assert!(internal_mcp_gateway_endpoint_from_url("https://224.0.0.1/mcp/post").is_err());
++    }
++
++    #[test]
++    fn config_requires_token_when_url_is_set() {
++        assert_eq!(
++            InternalMcpGatewayBootstrapConfig::from_optional_parts(
++                Some("https://gateway.internal/mcp/post"),
++                None
++            )
++            .expect_err("missing token"),
++            InternalMcpGatewayBootstrapConfigError::MissingToken
++        );
++    }
++
++    #[test]
++    fn config_is_absent_without_url() {
++        assert!(
++            InternalMcpGatewayBootstrapConfig::from_optional_parts(
++                None::<String>,
++                Some(SecretString::from("token"))
++            )
++            .expect("absent config")
++            .is_none()
++        );
++    }
++
++    #[test]
++    fn config_rejects_invalid_url_eagerly() {
++        assert!(matches!(
++            InternalMcpGatewayBootstrapConfig::from_optional_parts(
++                Some("http://gateway.internal/mcp/post"),
++                Some(SecretString::from("token"))
++            )
++            .expect_err("http url"),
++            InternalMcpGatewayBootstrapConfigError::InvalidUrl(_)
++        ));
++    }
++
++    #[test]
++    fn bootstrap_config_from_env_reads_both_variables() {
++        let env = InternalMcpGatewayEnvGuard::new();
++        env.set_url(" https://mcp-gateway.clawbot.internal:8443/mcp/post ");
++        env.set_token(" gateway-test-token ");
++
++        let config = internal_mcp_gateway_bootstrap_config_from_env()
++            .expect("env config")
++            .expect("present config");
++
++        assert_eq!(config.token.expose_secret(), "gateway-test-token");
++        assert_eq!(
++            config.endpoint().expect("endpoint").url,
++            "https://mcp-gateway.clawbot.internal:8443/mcp/post"
++        );
++    }
++
++    #[test]
++    fn bootstrap_config_from_env_returns_none_when_unset() {
++        let _env = InternalMcpGatewayEnvGuard::new();
++
++        assert!(
++            internal_mcp_gateway_bootstrap_config_from_env()
++                .expect("env config")
++                .is_none()
++        );
++    }
++}
+diff --git a/crates/ironclaw_reborn_composition/src/lib.rs b/crates/ironclaw_reborn_composition/src/lib.rs
+index a8c52f5c1..95416a943 100644
+--- a/crates/ironclaw_reborn_composition/src/lib.rs
++++ b/crates/ironclaw_reborn_composition/src/lib.rs
+@@ -46,6 +46,7 @@ mod google_oauth;
+ mod gsuite;
+ mod hooks;
+ mod input;
++mod internal_mcp_gateway;
+ mod lifecycle;
+ #[cfg(feature = "root-llm-provider")]
+ mod llm_catalog;
+@@ -177,6 +178,10 @@ pub use hooks::{
+     tenant_extension_root,
+ };
+ pub use input::{OAuthClientConfig, RebornBuildInput, RebornRuntimeProcessBinding};
++pub use internal_mcp_gateway::{
++    InternalMcpGatewayBootstrapConfig, InternalMcpGatewayBootstrapConfigError,
++    internal_mcp_gateway_bootstrap_config_from_env,
++};
+ #[cfg(feature = "webui-v2-beta")]
+ pub use ironclaw_auth::GoogleOAuthRouteConfig;
+ pub use ironclaw_product_workflow::{
+diff --git a/crates/ironclaw_reborn_composition/src/mcp.rs b/crates/ironclaw_reborn_composition/src/mcp.rs
+index d820a8c6a..577e508b9 100644
+--- a/crates/ironclaw_reborn_composition/src/mcp.rs
++++ b/crates/ironclaw_reborn_composition/src/mcp.rs
+@@ -12,6 +12,8 @@ use ironclaw_mcp::{
+     McpHostHttpEgressPlanner, McpRuntime, McpRuntimeConfig, McpRuntimeHttpAdapter,
+ };
+ 
++use crate::internal_mcp_gateway::INTERNAL_MCP_GATEWAY_EXTENSION_ID;
++
+ pub(crate) const MCP_RESPONSE_BODY_LIMIT: u64 = 2 * 1024 * 1024;
+ const MCP_NETWORK_EGRESS_LIMIT: u64 = 2 * 1024 * 1024;
+ const MCP_TIMEOUT_MS: u32 = 60_000;
+@@ -91,10 +93,12 @@ impl McpHostHttpEgressPlanner for RegistryMcpEgressPlanner {
+             // is still enforced below. Missing credentials for providers that
+             // should authenticate are a manifest/catalog validation concern,
+             // not an egress-planning reason to block the HTTP request.
+-            // Must match the bundled manifest's network policy
+-            // (deny_private_ip_ranges: true) or the dispatcher rejects the
+-            // request.
+-            network_policy: hosted_mcp_network_policy(&endpoint),
++            // Must match the bundled manifest's network policy or the
++            // dispatcher rejects the request.
++            network_policy: hosted_mcp_network_policy(
++                &endpoint,
++                allows_private_targets(request.provider),
++            ),
+             credential_injections,
+             response_body_limit: Some(MCP_RESPONSE_BODY_LIMIT),
+             timeout_ms: Some(MCP_TIMEOUT_MS),
+@@ -173,7 +177,26 @@ fn normalize_mcp_path(path: &str) -> String {
+     }
+ }
+ 
+-fn hosted_mcp_network_policy(endpoint: &HostedMcpEndpoint) -> NetworkPolicy {
++/// The operator-configured internal MCP gateway is the one hosted provider
++/// allowed to resolve to a private address.
++///
++/// Three things bound the exception. The package is host-bundled — an id match
++/// alone is not enough, because [`hosted_http_mcp_endpoint`] returns `None` for
++/// any other [`ManifestSource`], so a filesystem-supplied extension reusing this
++/// id never reaches here. It only enters the catalog when the operator sets
++/// `CLAWBOT_MCP_GATEWAY_URL` (see [`crate::internal_mcp_gateway`]), so a default
++/// deployment has no such provider at all. And the endpoint is still pinned to
++/// one https host/port/path by [`hosted_mcp_url_allowed`].
++///
++/// Every other hosted MCP provider keeps the fail-closed default.
++fn allows_private_targets(provider: &ExtensionId) -> bool {
++    provider.as_str() == INTERNAL_MCP_GATEWAY_EXTENSION_ID
++}
++
++fn hosted_mcp_network_policy(
++    endpoint: &HostedMcpEndpoint,
++    allow_private_targets: bool,
++) -> NetworkPolicy {
+     NetworkPolicy {
+         allowed_targets: vec![NetworkTargetPattern {
+             scheme: Some(NetworkScheme::Https),
+@@ -182,7 +205,7 @@ fn hosted_mcp_network_policy(endpoint: &HostedMcpEndpoint) -> NetworkPolicy {
+         }],
+         // Matches the bundled manifest's deny_private_ip_ranges default.
+         // Dispatcher would reject anyway, but the plan must agree.
+-        deny_private_ip_ranges: true,
++        deny_private_ip_ranges: !allow_private_targets,
+         max_egress_bytes: Some(MCP_NETWORK_EGRESS_LIMIT),
+     }
+ }
+diff --git a/crates/ironclaw_turns/src/run_profile/instruction_bundle.rs b/crates/ironclaw_turns/src/run_profile/instruction_bundle.rs
+index 3ed78ece1..06ea2cc9a 100644
+--- a/crates/ironclaw_turns/src/run_profile/instruction_bundle.rs
++++ b/crates/ironclaw_turns/src/run_profile/instruction_bundle.rs
+@@ -625,6 +625,9 @@ fn push_visible_surface(
+     surface
+         .descriptors
+         .sort_by(|a, b| a.capability_id.cmp(&b.capability_id));
++    for descriptor in &mut surface.descriptors {
++        neutralize_unsafe_description(descriptor);
++    }
+     let mut summary = format!("surface {}", surface.version.as_str());
+     for descriptor in &surface.descriptors {
+         validate_surface_descriptor(descriptor)?;
+@@ -670,6 +673,26 @@ fn push_visible_surface(
+     Ok(())
+ }
+ 
++/// Replaces a description the model-safety check rejects with a neutral one.
++///
++/// Descriptions of discovered MCP tools are third-party text: one docstring
++/// naming an endpoint path or the words "API key" used to fail the whole
++/// prompt, and with it every turn the agent took. The rejected text still
++/// never reaches the model; only the failure is contained to that one tool.
++/// Names stay strict: an unsafe name is still fatal below.
++fn neutralize_unsafe_description(descriptor: &mut CapabilityDescriptorView) {
++    if validate_model_safe_text(descriptor.safe_description.clone(), "capability safe description")
++        .is_ok()
++    {
++        return;
++    }
++    tracing::warn!(
++        capability = %descriptor.capability_id.as_str(),
++        "capability description is not model-safe; replaced with a neutral one"
++    );
++    descriptor.safe_description = format!("Capability {}.", descriptor.safe_name);
++}
++
+ fn validate_surface_descriptor(
+     descriptor: &CapabilityDescriptorView,
+ ) -> Result<(), AgentLoopHostError> {
+diff --git a/crates/ironclaw_webui_v2_static/static/js/pages/logs/hooks/useLogs.js b/crates/ironclaw_webui_v2_static/static/js/pages/logs/hooks/useLogs.js
+deleted file mode 100644
+index f85183b81..000000000
+--- a/crates/ironclaw_webui_v2_static/static/js/pages/logs/hooks/useLogs.js
++++ /dev/null
+@@ -1,127 +0,0 @@
+-import { useLocation } from "react-router";
+-import { React } from "../../../lib/html.js";
+-import { queryOperatorLogs } from "../../../lib/api.js";
+-import { normalizeOperatorLogsResponse } from "../lib/logs-data.js";
+-
+-const POLL_INTERVAL_MS = 2000;
+-const LOG_LIMIT = 500;
+-const HIDDEN_ENTRY_ID_CAP = 2000;
+-const TERMINAL_UNSUPPORTED_STATUSES = new Set([403, 404]);
+-const SCOPE_QUERY_PARAMS = [
+-  ["threadId", "thread_id", "logs.scope.thread"],
+-  ["runId", "run_id", "logs.scope.run"],
+-  ["turnId", "turn_id", "logs.scope.turn"],
+-  ["toolCallId", "tool_call_id", "logs.scope.toolCall"],
+-  ["toolName", "tool_name", "logs.scope.tool"],
+-  ["source", "source", "logs.scope.source"],
+-];
+-
+-export function readLogScopeFromLocation(location = globalThis.location) {
+-  const params = new URLSearchParams(location?.search || "");
+-  return SCOPE_QUERY_PARAMS.reduce((scope, [key, param, labelKey]) => {
+-    const value = params.get(param)?.trim();
+-    if (value) {
+-      scope[key] = value;
+-      scope.active.push({ key, param, labelKey, value });
+-    } else {
+-      scope[key] = null;
+-    }
+-    return scope;
+-  }, { active: [] });
+-}
+-
+-export function useLogs() {
+-  const location = useLocation();
+-  const scope = React.useMemo(() => readLogScopeFromLocation(location), [location.search]);
+-  const [entries, setEntries] = React.useState([]);
+-  const [levelFilter, setLevelFilter] = React.useState("all");
+-  const [targetFilter, setTargetFilter] = React.useState("");
+-  const [paused, setPaused] = React.useState(false);
+-  const [autoScroll, setAutoScroll] = React.useState(true);
+-  const [isLoading, setIsLoading] = React.useState(true);
+-  const [error, setError] = React.useState(null);
+-  const [isUnsupported, setIsUnsupported] = React.useState(false);
+-  const hiddenEntryIdsRef = React.useRef(new Set());
+-  const requestIdRef = React.useRef(0);
+-
+-  const loadLogs = React.useCallback(async () => {
+-    if (isUnsupported) return;
+-    const requestId = ++requestIdRef.current;
+-    setIsLoading(true);
+-    try {
+-      const response = await queryOperatorLogs({
+-        limit: LOG_LIMIT,
+-        level: levelFilter === "all" ? null : levelFilter,
+-        target: targetFilter.trim() || null,
+-        threadId: scope.threadId,
+-        runId: scope.runId,
+-        turnId: scope.turnId,
+-        toolCallId: scope.toolCallId,
+-        toolName: scope.toolName,
+-        source: scope.source,
+-      });
+-      if (requestId !== requestIdRef.current) return;
+-      const hidden = hiddenEntryIdsRef.current;
+-      const logs = normalizeOperatorLogsResponse(response);
+-      const nextEntries = logs.entries.filter((entry) => !hidden.has(entry.id));
+-      setEntries(nextEntries);
+-      setError(null);
+-    } catch (err) {
+-      if (requestId !== requestIdRef.current) return;
+-      if (TERMINAL_UNSUPPORTED_STATUSES.has(err?.status)) {
+-        setEntries([]);
+-        setError(null);
+-        setIsUnsupported(true);
+-        return;
+-      }
+-      setError(err);
+-    } finally {
+-      if (requestId === requestIdRef.current) {
+-        setIsLoading(false);
+-      }
+-    }
+-  }, [isUnsupported, levelFilter, scope, targetFilter]);
+-
+-  React.useEffect(() => {
+-    loadLogs();
+-  }, [loadLogs]);
+-
+-  React.useEffect(() => {
+-    if (paused || isUnsupported) return undefined;
+-    const timer = setInterval(loadLogs, POLL_INTERVAL_MS);
+-    return () => clearInterval(timer);
+-  }, [isUnsupported, loadLogs, paused]);
+-
+-  const togglePause = React.useCallback(() => {
+-    setPaused((value) => !value);
+-  }, []);
+-
+-  const clearEntries = React.useCallback(() => {
+-    const hidden = [
+-      ...hiddenEntryIdsRef.current,
+-      ...entries.map((entry) => entry.id),
+-    ].slice(-HIDDEN_ENTRY_ID_CAP);
+-    hiddenEntryIdsRef.current = new Set(hidden);
+-    setEntries([]);
+-  }, [entries]);
+-
+-  return {
+-    entries,
+-    totalCount: entries.length,
+-    paused,
+-    togglePause,
+-    clearEntries,
+-    levelFilter,
+-    setLevelFilter,
+-    targetFilter,
+-    setTargetFilter,
+-    autoScroll,
+-    setAutoScroll,
+-    serverLevel: null,
+-    changeServerLevel: async () => {},
+-    scope,
+-    status: error ? "error" : isLoading ? "loading" : "ready",
+-    isLoading,
+-    error,
+-  };
+-}
+diff --git a/crates/ironclaw_webui_v2_static/static/js/pages/logs/hooks/useLogs.test.mjs b/crates/ironclaw_webui_v2_static/static/js/pages/logs/hooks/useLogs.test.mjs
+deleted file mode 100644
+index eca6efa86..000000000
+--- a/crates/ironclaw_webui_v2_static/static/js/pages/logs/hooks/useLogs.test.mjs
++++ /dev/null
+@@ -1,145 +0,0 @@
+-import assert from "node:assert/strict";
+-import { readFileSync } from "node:fs";
+-import test from "node:test";
+-import vm from "node:vm";
+-
+-function useLogsSourceForTest() {
+-  const source = readFileSync(new URL("./useLogs.js", import.meta.url), "utf8");
+-  const lines = [];
+-  for (const line of source.split("\n")) {
+-    if (line.startsWith("import ")) continue;
+-    lines.push(
+-      line
+-        .replace("export function readLogScopeFromLocation", "function readLogScopeFromLocation")
+-        .replace("export function useLogs", "function useLogs"),
+-    );
+-  }
+-  return `${lines.join("\n")}\nglobalThis.__testExports = { readLogScopeFromLocation, useLogs };`;
+-}
+-
+-function depsChanged(previous, next) {
+-  if (!previous || !next || previous.length !== next.length) return true;
+-  return next.some((value, index) => !Object.is(value, previous[index]));
+-}
+-
+-function createHookHarness({ search = "" } = {}) {
+-  const calls = [];
+-  const intervals = [];
+-  let location = { search };
+-  let hookIndex = 0;
+-  const hooks = [];
+-  const pendingEffects = [];
+-
+-  const React = {
+-    useCallback(fn, deps) {
+-      const index = hookIndex++;
+-      const hook = hooks[index];
+-      if (!hook || depsChanged(hook.deps, deps)) {
+-        hooks[index] = { deps, value: fn };
+-      }
+-      return hooks[index].value;
+-    },
+-    useEffect(fn, deps) {
+-      const index = hookIndex++;
+-      const hook = hooks[index];
+-      if (!hook || depsChanged(hook.deps, deps)) {
+-        hooks[index] = { deps };
+-        pendingEffects.push(fn);
+-      }
+-    },
+-    useMemo(fn, deps) {
+-      const index = hookIndex++;
+-      const hook = hooks[index];
+-      if (!hook || depsChanged(hook.deps, deps)) {
+-        hooks[index] = { deps, value: fn() };
+-      }
+-      return hooks[index].value;
+-    },
+-    useRef(initial) {
+-      const index = hookIndex++;
+-      if (!hooks[index]) {
+-        hooks[index] = { current: initial };
+-      }
+-      return hooks[index];
+-    },
+-    useState(initial) {
+-      const index = hookIndex++;
+-      if (!hooks[index]) {
+-        hooks[index] = {
+-          value: typeof initial === "function" ? initial() : initial,
+-        };
+-      }
+-      const setValue = (next) => {
+-        hooks[index].value =
+-          typeof next === "function" ? next(hooks[index].value) : next;
+-      };
+-      return [hooks[index].value, setValue];
+-    },
+-  };
+-
+-  const context = {
+-    React,
+-    clearInterval: () => {},
+-    globalThis: {},
+-    normalizeOperatorLogsResponse: (response) => ({
+-      entries: response?.entries || response?.logs?.entries || [],
+-    }),
+-    queryOperatorLogs: async (request) => {
+-      calls.push(request);
+-      return { entries: [{ id: String(calls.length) }] };
+-    },
+-    setInterval: (fn, ms) => {
+-      intervals.push({ fn, ms });
+-      return intervals.length;
+-    },
+-    useLocation: () => location,
+-    URLSearchParams,
+-  };
+-
+-  vm.runInNewContext(useLogsSourceForTest(), context);
+-
+-  return {
+-    calls,
+-    intervals,
+-    render() {
+-      hookIndex = 0;
+-      pendingEffects.length = 0;
+-      return context.globalThis.__testExports.useLogs();
+-    },
+-    async runEffects() {
+-      const effects = pendingEffects.splice(0);
+-      for (const effect of effects) {
+-        effect();
+-      }
+-      await Promise.resolve();
+-      await Promise.resolve();
+-    },
+-    setSearch(nextSearch) {
+-      location = { search: nextSearch };
+-    },
+-  };
+-}
+-
+-test("useLogs reloads scoped logs once when scope changes while paused", async () => {
+-  const harness = createHookHarness({ search: "?thread_id=thread-a" });
+-
+-  let result = harness.render();
+-  await harness.runEffects();
+-  assert.equal(harness.calls.length, 1);
+-  assert.equal(harness.calls[0].threadId, "thread-a");
+-  assert.equal(harness.intervals.length, 1);
+-
+-  result.togglePause();
+-  result = harness.render();
+-  await harness.runEffects();
+-  assert.equal(harness.calls.length, 1);
+-
+-  harness.setSearch("?thread_id=thread-b");
+-  result = harness.render();
+-  await harness.runEffects();
+-
+-  assert.equal(result.paused, true);
+-  assert.equal(harness.calls.length, 2);
+-  assert.equal(harness.calls[1].threadId, "thread-b");
+-  assert.equal(harness.intervals.length, 1);
+-});
+diff --git a/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.js b/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.js
+index 9f045db7c..3f2037072 100644
+--- a/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.js
++++ b/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.js
+@@ -1,44 +1,15 @@
+-export function normalizeLogEntry(entry) {
+-  return {
+-    id: String(entry?.id ?? `${entry?.timestamp}:${entry?.target}:${entry?.message}`),
+-    timestamp: entry?.timestamp || "",
+-    level: String(entry?.level || "info").toLowerCase(),
+-    target: entry?.target || "",
+-    message: entry?.message || "",
+-    threadId: entry?.thread_id || null,
+-    runId: entry?.run_id || null,
+-    turnId: entry?.turn_id || null,
+-    toolCallId: entry?.tool_call_id || null,
+-    toolName: entry?.tool_name || null,
+-    source: entry?.source || null,
+-  };
+-}
+-
++// Builds the SPA route for the scoped logs view. The router mounts with
++// basename="/v2" (see app/app.js), so `absolute: true` — needed when the
++// result lands in a plain <a href> — prepends the mount prefix, while the
++// default relative form is what react-router `navigate()` expects.
+ export function buildScopedLogsPath(
+-  { threadId, runId, turnId, toolCallId, toolName, source } = {},
++  { threadId, runId } = {},
+   { absolute = false } = {},
+ ) {
+   const params = new URLSearchParams();
+-  if (threadId) params.set("thread_id", threadId);
+-  if (runId) params.set("run_id", runId);
+-  if (turnId) params.set("turn_id", turnId);
+-  if (toolCallId) params.set("tool_call_id", toolCallId);
+-  if (toolName) params.set("tool_name", toolName);
+-  if (source) params.set("source", source);
+-  const suffix = params.toString();
+-  const path = `/logs${suffix ? `?${suffix}` : ""}`;
+-  return absolute ? `/v2${path}` : path;
+-}
+-
+-export function normalizeOperatorLogsResponse(response) {
+-  const payload =
+-    response?.logs && typeof response.logs === "object" ? response.logs : response || {};
+-  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+-  return {
+-    source: payload.source || "",
+-    entries: entries.map(normalizeLogEntry),
+-    nextCursor: payload.next_cursor || null,
+-    tailSupported: Boolean(payload.tail_supported),
+-    followSupported: Boolean(payload.follow_supported),
+-  };
++  if (threadId) params.set("thread", threadId);
++  if (runId) params.set("run", runId);
++  const query = params.toString();
++  const base = absolute ? "/v2/logs" : "/logs";
++  return query ? `${base}?${query}` : base;
+ }
+diff --git a/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.test.mjs b/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.test.mjs
+deleted file mode 100644
+index 9727919a4..000000000
+--- a/crates/ironclaw_webui_v2_static/static/js/pages/logs/lib/logs-data.test.mjs
++++ /dev/null
+@@ -1,104 +0,0 @@
+-import assert from "node:assert/strict";
+-import test from "node:test";
+-
+-import {
+-  buildScopedLogsPath,
+-  normalizeLogEntry,
+-  normalizeOperatorLogsResponse,
+-} from "./logs-data.js";
+-
+-test("normalizeOperatorLogsResponse reads command-plane nested logs payload", () => {
+-  const response = normalizeOperatorLogsResponse({
+-    status: "available",
+-    logs: {
+-      source: "in_memory_tracing",
+-      next_cursor: "before:4",
+-      tail_supported: true,
+-      follow_supported: false,
+-      entries: [
+-        {
+-          id: "5",
+-          timestamp: "2026-06-11T12:00:00.123Z",
+-          level: "warn",
+-          target: "ironclaw::test",
+-          message: "something happened",
+-          thread_id: "thread-a",
+-          run_id: "run-a",
+-          turn_id: "turn-a",
+-          tool_call_id: "tool-a",
+-          tool_name: "shell",
+-          source: "slack",
+-        },
+-      ],
+-    },
+-  });
+-
+-  assert.equal(response.source, "in_memory_tracing");
+-  assert.equal(response.nextCursor, "before:4");
+-  assert.equal(response.tailSupported, true);
+-  assert.equal(response.followSupported, false);
+-  assert.deepEqual(response.entries, [
+-    {
+-      id: "5",
+-      timestamp: "2026-06-11T12:00:00.123Z",
+-      level: "warn",
+-      target: "ironclaw::test",
+-      message: "something happened",
+-      threadId: "thread-a",
+-      runId: "run-a",
+-      turnId: "turn-a",
+-      toolCallId: "tool-a",
+-      toolName: "shell",
+-      source: "slack",
+-    },
+-  ]);
+-});
+-
+-test("normalizeOperatorLogsResponse tolerates direct log payloads", () => {
+-  const response = normalizeOperatorLogsResponse({
+-    entries: [{ id: 7, level: "ERROR", message: "failed" }],
+-  });
+-
+-  assert.deepEqual(response.entries, [
+-    {
+-      id: "7",
+-      timestamp: "",
+-      level: "error",
+-      target: "",
+-      message: "failed",
+-      threadId: null,
+-      runId: null,
+-      turnId: null,
+-      toolCallId: null,
+-      toolName: null,
+-      source: null,
+-    },
+-  ]);
+-});
+-
+-test("normalizeLogEntry creates a stable fallback id", () => {
+-  assert.equal(
+-    normalizeLogEntry({
+-      timestamp: "2026-06-11T12:00:00Z",
+-      target: "ironclaw::test",
+-      message: "hello",
+-    }).id,
+-    "2026-06-11T12:00:00Z:ironclaw::test:hello",
+-  );
+-});
+-
+-test("buildScopedLogsPath encodes structured log filters", () => {
+-  assert.equal(
+-    buildScopedLogsPath({
+-      threadId: "thread a",
+-      runId: "run-a",
+-      toolCallId: "tool/a",
+-      source: "slack",
+-    }),
+-    "/logs?thread_id=thread+a&run_id=run-a&tool_call_id=tool%2Fa&source=slack",
+-  );
+-  assert.equal(
+-    buildScopedLogsPath({ threadId: "thread-a" }, { absolute: true }),
+-    "/v2/logs?thread_id=thread-a",
+-  );
+-});
+diff --git a/crates/ironclaw_webui_v2_static/static/js/pages/logs/logs-page.js b/crates/ironclaw_webui_v2_static/static/js/pages/logs/logs-page.js
+index 27efaa4cf..44fcf5f6d 100644
+--- a/crates/ironclaw_webui_v2_static/static/js/pages/logs/logs-page.js
++++ b/crates/ironclaw_webui_v2_static/static/js/pages/logs/logs-page.js
+@@ -1,305 +1,23 @@
+ import { React, html } from "../../lib/html.js";
+ import { useT } from "../../lib/i18n.js";
+-import { useLogs } from "./hooks/useLogs.js";
+-
+-const LEVELS = ["all", "trace", "debug", "info", "warn", "error"];
+-const SERVER_LEVELS = ["trace", "debug", "info", "warn", "error"];
+-
+-const LEVEL_COLORS = {
+-  trace: "text-[var(--v2-text-muted)]",
+-  debug: "text-[color-mix(in_srgb,var(--v2-accent)_80%,white)]",
+-  info: "text-[var(--v2-text-strong)]",
+-  warn: "text-yellow-400",
+-  error: "text-red-400",
+-};
+-
+-const LEVEL_BG = {
+-  warn: "bg-yellow-500/5",
+-  error: "bg-red-500/8",
+-};
+-
+-function LogEntry({ entry }) {
+-  const t = useT();
+-  const [expanded, setExpanded] = React.useState(false);
+-  const ts = entry.timestamp ? entry.timestamp.substring(11, 23) : "";
+-  const levelColor = LEVEL_COLORS[entry.level] || LEVEL_COLORS.info;
+-  const rowBg = LEVEL_BG[entry.level] || "";
+-  const contextItems = [
+-    { key: "thread_id", labelKey: "logs.scope.thread", value: entry.threadId },
+-    { key: "run_id", labelKey: "logs.scope.run", value: entry.runId },
+-    { key: "turn_id", labelKey: "logs.scope.turn", value: entry.turnId },
+-    { key: "tool_call_id", labelKey: "logs.scope.toolCall", value: entry.toolCallId },
+-    { key: "tool_name", labelKey: "logs.scope.tool", value: entry.toolName },
+-    { key: "source", labelKey: "logs.scope.source", value: entry.source },
+-  ].filter((item) => Boolean(item.value));
+-
+-  return html`
+-    <div data-testid="logs-entry" className=${rowBg}>
+-      <div
+-        data-testid="logs-entry-row"
+-        onClick=${() => setExpanded((v) => !v)}
+-        className=${[
+-          "grid cursor-pointer select-none gap-x-3 px-4 py-1 font-mono text-xs hover:bg-[var(--v2-surface-muted)]",
+-          "grid-cols-[7rem_3rem_minmax(10rem,18rem)_1fr]",
+-        ].join(" ")}
+-      >
+-        <span className="text-[var(--v2-text-muted)] tabular-nums">${ts}</span>
+-        <span className=${["font-semibold uppercase", levelColor].join(" ")}>
+-          ${entry.level}
+-        </span>
+-        <span className="truncate text-[var(--v2-text-muted)]">${entry.target}</span>
+-        <span
+-          data-testid="logs-entry-message"
+-          className=${[
+-            "min-w-0 text-[var(--v2-text-base)]",
+-            expanded ? "whitespace-pre-wrap break-all" : "truncate",
+-          ].join(" ")}
+-        >
+-          ${entry.message}
+-        </span>
+-      </div>
+-      ${expanded && contextItems.length > 0 &&
+-      html`
+-        <div
+-          data-testid="logs-entry-context"
+-          className="flex flex-wrap gap-1.5 px-4 pb-2 pl-[calc(7rem+3rem+2.5rem)] font-mono text-[11px] text-[var(--v2-text-muted)]"
+-        >
+-          ${contextItems.map(
+-            (item) => html`
+-              <span
+-                key=${item.key}
+-                data-testid="logs-context-chip"
+-                data-context-key=${item.key}
+-                className="inline-flex max-w-full items-center gap-1 rounded-[6px] border border-[var(--v2-panel-border)] bg-[var(--v2-surface-muted)] px-2 py-0.5"
+-              >
+-                <span>${t(item.labelKey)}</span>
+-                <span className="max-w-[18rem] truncate text-[var(--v2-text-base)]">${item.value}</span>
+-              </span>
+-            `
+-          )}
+-        </div>
+-      `}
+-    </div>
+-  `;
+-}
+-
+-function ToolbarSelect({ value, onChange, options, labelKey, t }) {
+-  return html`
+-    <select
+-      value=${value}
+-      onChange=${(e) => onChange(e.target.value)}
+-      className="v2-select h-8 min-w-0 rounded-[8px] px-2.5 py-0 text-xs"
+-    >
+-      ${options.map(
+-        (opt) => html`<option key=${opt} value=${opt}>${t(labelKey(opt))}</option>`
+-      )}
+-    </select>
+-  `;
+-}
+-
+-function ScopeChip({ label, value, scopeKey }) {
+-  return html`
+-    <span
+-      data-testid="logs-scope-chip"
+-      data-scope-key=${scopeKey}
+-      className="inline-flex max-w-full items-center gap-1 rounded-[6px] border border-[var(--v2-panel-border)] bg-[var(--v2-surface-muted)] px-2 py-1 font-mono text-[11px] text-[var(--v2-text-muted)]"
+-      title=${`${label}: ${value}`}
+-    >
+-      <span className="uppercase tracking-[0.08em]">${label}</span>
+-      <span className="max-w-[18rem] truncate text-[var(--v2-text-base)]">${value}</span>
+-    </span>
+-  `;
+-}
+ 
+ export function LogsPage() {
+   const t = useT();
+-  const {
+-    entries,
+-    totalCount,
+-    paused,
+-    togglePause,
+-    clearEntries,
+-    levelFilter,
+-    setLevelFilter,
+-    targetFilter,
+-    setTargetFilter,
+-    autoScroll,
+-    setAutoScroll,
+-    serverLevel,
+-    changeServerLevel,
+-    scope,
+-    isLoading,
+-    error,
+-  } = useLogs();
+-
+-  const outputRef = React.useRef(null);
+-  const followLatestRef = React.useRef(true);
+-
+-  React.useEffect(() => {
+-    if (autoScroll && followLatestRef.current && outputRef.current) {
+-      outputRef.current.scrollTop = 0;
+-    }
+-  }, [entries, autoScroll]);
+-
+-  const handleOutputScroll = React.useCallback((event) => {
+-    followLatestRef.current = event.currentTarget.scrollTop <= 48;
+-  }, []);
+-
+-  const hasEntries = entries.length > 0;
+-  const activeScope = scope?.active || [];
+ 
+   return html`
+-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+-      <!-- Toolbar -->
+-      <div
+-        className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--v2-panel-border)] bg-[var(--v2-canvas-strong)] px-4 py-2"
+-      >
+-        <!-- Level filter -->
+-        <${ToolbarSelect}
+-          value=${levelFilter}
+-          onChange=${setLevelFilter}
+-          options=${LEVELS}
+-          labelKey=${(opt) => (opt === "all" ? "logs.levelAll" : `logs.level.${opt}`)}
+-          t=${t}
+-        />
+-
+-        <!-- Target filter -->
+-        <input
+-          type="text"
+-          value=${targetFilter}
+-          onInput=${(e) => setTargetFilter(e.target.value)}
+-          placeholder=${t("logs.filterTarget")}
+-          className="h-8 min-w-[10rem] flex-1 rounded-[8px] border border-[var(--v2-panel-border)] bg-[var(--v2-surface-muted)] px-3 text-xs text-[var(--v2-text-base)] placeholder:text-[var(--v2-text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--v2-accent)]"
+-        />
+-
+-        <div className="flex items-center gap-2 ml-auto">
+-          <span className="hidden tabular-nums text-xs text-[var(--v2-text-muted)] sm:inline">
+-            ${t("logs.entryCount", { count: totalCount })}
+-          </span>
+-
+-          <!-- Auto-scroll toggle -->
+-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--v2-text-muted)]">
+-            <input
+-              type="checkbox"
+-              checked=${autoScroll}
+-              onChange=${(e) => setAutoScroll(e.target.checked)}
+-              className="h-3.5 w-3.5 accent-[var(--v2-accent)]"
+-            />
+-            ${t("logs.autoScroll")}
+-          </label>
+-
+-          <!-- Pause/Resume -->
+-          <button
+-            onClick=${togglePause}
+-            className=${[
+-              "h-8 rounded-[8px] px-3 text-xs font-medium",
+-              paused
+-                ? "bg-[var(--v2-accent-soft)] text-[var(--v2-accent-text)] hover:bg-[color-mix(in_srgb,var(--v2-accent)_18%,transparent)]"
+-                : "border border-[var(--v2-panel-border)] text-[var(--v2-text-muted)] hover:bg-[var(--v2-surface-muted)] hover:text-[var(--v2-text-strong)]",
+-            ].join(" ")}
+-          >
+-            ${paused ? t("logs.resume") : t("logs.pause")}
+-          </button>
+-
+-          <!-- Clear -->
+-          <button
+-            onClick=${() => {
+-              if (confirm(t("logs.confirmClear"))) clearEntries();
+-            }}
+-            className="h-8 rounded-[8px] border border-[var(--v2-panel-border)] px-3 text-xs text-[var(--v2-text-muted)] hover:bg-[var(--v2-surface-muted)] hover:text-[var(--v2-text-strong)]"
+-          >
+-            ${t("logs.clear")}
+-          </button>
+-        </div>
+-
+-        ${activeScope.length > 0 &&
+-        html`
+-          <div
+-            data-testid="logs-scope-toolbar"
+-            className="flex w-full flex-wrap items-center gap-2 border-t border-[var(--v2-panel-border)] pt-2 text-xs text-[var(--v2-text-muted)]"
+-          >
+-            <span className="font-medium text-[var(--v2-text-strong)]">${t("logs.scoped")}</span>
+-            ${activeScope.map(
+-              (item) => html`<${ScopeChip} key=${item.param} scopeKey=${item.param} label=${t(item.labelKey)} value=${item.value} />`
+-            )}
+-            <a
+-              href="/v2/logs"
+-              className="ml-auto rounded-[6px] px-2 py-1 text-xs text-[var(--v2-text-muted)] hover:bg-[var(--v2-surface-muted)] hover:text-[var(--v2-text-strong)]"
+-            >
+-              ${t("logs.clearScope")}
+-            </a>
+-          </div>
+-        `}
+-
+-        <!-- Server log level -->
+-        ${serverLevel != null &&
+-        html`
+-          <div className="flex w-full items-center gap-2 border-t border-[var(--v2-panel-border)] pt-2 text-xs text-[var(--v2-text-muted)]">
+-            <span>${t("logs.serverLevel")}</span>
+-            <${ToolbarSelect}
+-              value=${serverLevel}
+-              onChange=${changeServerLevel}
+-              options=${SERVER_LEVELS}
+-              labelKey=${(opt) => `logs.level.${opt}`}
+-              t=${t}
+-            />
+-            <span className="ml-auto tabular-nums">
+-              ${t("logs.entryCount", { count: totalCount })}
+-              ${paused ? html`<span className="ml-1 text-yellow-400">${t("logs.pausedBadge")}</span>` : null}
+-            </span>
+-          </div>
+-        `}
++    <main className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
++      <div className="flex items-center gap-3">
++        <h1 className="text-xl font-semibold text-[var(--v2-text-strong)]">
++          Logs
++        </h1>
+       </div>
+-
+-      <!-- Log output -->
+       <div
+-        ref=${outputRef}
+-        onScroll=${handleOutputScroll}
+-        className="min-h-0 flex-1 overflow-y-auto bg-[var(--v2-canvas)]"
++        className="rounded-lg border border-[var(--v2-panel-border)] bg-[var(--v2-surface)] p-8 text-center"
+       >
+-        ${error && hasEntries
+-          ? html`
+-              <div
+-                className="sticky top-0 z-10 border-b border-red-500/25 bg-red-950/70 px-4 py-2 text-xs text-red-100 backdrop-blur"
+-              >
+-                ${t("error.loadFailed", {
+-                  what: t("nav.logs"),
+-                  message: error.message || error.statusText || "Request failed",
+-                })}
+-              </div>
+-            `
+-          : null}
+-        ${error && !hasEntries
+-          ? html`
+-              <div
+-                className="flex h-full items-center justify-center px-6 text-center text-sm text-red-300"
+-              >
+-                ${t("error.loadFailed", {
+-                  what: t("nav.logs"),
+-                  message: error.message || error.statusText || "Request failed",
+-                })}
+-              </div>
+-            `
+-          : isLoading && !hasEntries
+-            ? html`
+-                <div
+-                  className="flex h-full items-center justify-center text-sm text-[var(--v2-text-muted)]"
+-                >
+-                  ${t("common.loading")}
+-                </div>
+-              `
+-            : !hasEntries
+-          ? html`
+-              <div
+-                className="flex h-full items-center justify-center text-sm text-[var(--v2-text-muted)]"
+-              >
+-                ${t("logs.empty")}
+-              </div>
+-            `
+-          : entries.map(
+-              (entry) => html`<${LogEntry} key=${entry.id} entry=${entry} />`
+-            )}
++        <p className="text-sm text-[var(--v2-text-muted)]">
++          No logs available.
++        </p>
+       </div>
+-    </div>
++    </main>
+   `;
+ }
+diff --git a/src/channels/web/features/logs.rs b/src/channels/web/features/logs.rs
+new file mode 100644
+index 000000000..165b57ca5
+--- /dev/null
++++ b/src/channels/web/features/logs.rs
+@@ -0,0 +1,53 @@
++//! Log streaming / level endpoints.
++//!
++//! Stub slice: `mod.rs` declares this module and `platform::router`
++//! wires it to `/api/logs/*`, but no implementation was ever committed
++//! (missing file blocked compilation entirely). These handlers are
++//! placeholders — not implemented — so the gateway builds and starts;
++//! wire up real log streaming and level control here when needed.
++
++use std::sync::Arc;
++
++use axum::{Json, extract::State, http::StatusCode};
++use serde::{Deserialize, Serialize};
++
++use crate::channels::web::auth::AuthenticatedUser;
++use crate::channels::web::platform::state::GatewayState;
++
++#[derive(Serialize)]
++pub(crate) struct LogLevelResponse {
++    level: String,
++}
++
++#[derive(Deserialize)]
++pub(crate) struct LogLevelRequest {
++    #[allow(dead_code)]
++    level: String,
++}
++
++/// `GET /api/logs/events` — not implemented.
++pub(crate) async fn logs_events_handler(
++    State(_state): State<Arc<GatewayState>>,
++    _user: AuthenticatedUser,
++) -> StatusCode {
++    StatusCode::NOT_IMPLEMENTED
++}
++
++/// `GET /api/logs/level` — not implemented.
++pub(crate) async fn logs_level_get_handler(
++    State(_state): State<Arc<GatewayState>>,
++    _user: AuthenticatedUser,
++) -> Json<LogLevelResponse> {
++    Json(LogLevelResponse {
++        level: "info".to_string(),
++    })
++}
++
++/// `PUT /api/logs/level` — not implemented.
++pub(crate) async fn logs_level_set_handler(
++    State(_state): State<Arc<GatewayState>>,
++    _user: AuthenticatedUser,
++    Json(_req): Json<LogLevelRequest>,
++) -> StatusCode {
++    StatusCode::NOT_IMPLEMENTED
++}
+diff --git a/src/channels/web/features/logs/mod.rs b/src/channels/web/features/logs/mod.rs
+deleted file mode 100644
+index d235f0f3f..000000000
+--- a/src/channels/web/features/logs/mod.rs
++++ /dev/null
+@@ -1,102 +0,0 @@
+-//! Runtime log streaming and log-level control.
+-//!
+-//! Owns `GET /api/logs/events` (SSE stream of live log entries with a
+-//! startup-replay prefix) and `GET/PUT /api/logs/level` (runtime log-level
+-//! knob). The slice is deliberately tiny — logs have no cross-cutting state,
+-//! no shared helpers, and only ever read from
+-//! [`GatewayState::log_broadcaster`] / [`GatewayState::log_level_handle`].
+-
+-use std::convert::Infallible;
+-use std::sync::Arc;
+-
+-use axum::{
+-    Json,
+-    extract::State,
+-    http::StatusCode,
+-    response::{
+-        IntoResponse, Sse,
+-        sse::{Event, KeepAlive},
+-    },
+-};
+-use tokio_stream::StreamExt;
+-
+-use crate::channels::web::auth::AuthenticatedUser;
+-use crate::channels::web::platform::state::GatewayState;
+-
+-/// `GET /api/logs/events` — SSE stream of live log entries.
+-///
+-/// Replays a short history buffer so late-joining browsers see startup
+-/// logs, then forwards every new entry from the runtime log broadcaster.
+-/// The subscription is opened *before* the history snapshot so nothing
+-/// falls between the two.
+-pub(crate) async fn logs_events_handler(
+-    State(state): State<Arc<GatewayState>>,
+-    AuthenticatedUser(_user): AuthenticatedUser,
+-) -> Result<impl IntoResponse, (StatusCode, String)> {
+-    let broadcaster = state.log_broadcaster.as_ref().ok_or((
+-        StatusCode::SERVICE_UNAVAILABLE,
+-        "Log broadcaster not available".to_string(),
+-    ))?;
+-
+-    let rx = broadcaster.subscribe();
+-    let history = broadcaster.recent_entries();
+-
+-    let history_stream = futures::stream::iter(history).map(|entry| {
+-        let data = serde_json::to_string(&entry).unwrap_or_default();
+-        Ok::<_, Infallible>(Event::default().event("log").data(data))
+-    });
+-
+-    let live_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+-        .filter_map(|result| result.ok())
+-        .map(|entry| {
+-            let data = serde_json::to_string(&entry).unwrap_or_default();
+-            Ok::<_, Infallible>(Event::default().event("log").data(data))
+-        });
+-
+-    let stream = history_stream.chain(live_stream);
+-
+-    Ok((
+-        [("X-Accel-Buffering", "no"), ("Cache-Control", "no-cache")],
+-        Sse::new(stream).keep_alive(
+-            KeepAlive::new()
+-                .interval(std::time::Duration::from_secs(30))
+-                .text(""),
+-        ),
+-    ))
+-}
+-
+-/// `GET /api/logs/level` — return the current log level.
+-pub(crate) async fn logs_level_get_handler(
+-    State(state): State<Arc<GatewayState>>,
+-    AuthenticatedUser(_user): AuthenticatedUser,
+-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+-    let handle = state.log_level_handle.as_ref().ok_or((
+-        StatusCode::SERVICE_UNAVAILABLE,
+-        "Log level control not available".to_string(),
+-    ))?;
+-    Ok(Json(serde_json::json!({ "level": handle.current_level() })))
+-}
+-
+-/// `PUT /api/logs/level` — set the log level at runtime.
+-pub(crate) async fn logs_level_set_handler(
+-    State(state): State<Arc<GatewayState>>,
+-    AuthenticatedUser(user): AuthenticatedUser,
+-    Json(body): Json<serde_json::Value>,
+-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+-    let handle = state.log_level_handle.as_ref().ok_or((
+-        StatusCode::SERVICE_UNAVAILABLE,
+-        "Log level control not available".to_string(),
+-    ))?;
+-
+-    let level = body
+-        .get("level")
+-        .and_then(|v| v.as_str())
+-        .ok_or((StatusCode::BAD_REQUEST, "missing 'level' field".to_string()))?;
+-
+-    handle
+-        .set_level(level)
+-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+-
+-    tracing::info!(user_id = %user.user_id, "Log level changed to '{}'", handle.current_level());
+-    Ok(Json(serde_json::json!({ "level": handle.current_level() })))
+-}

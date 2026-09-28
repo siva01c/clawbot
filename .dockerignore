@@ -1,0 +1,11 @@
+# Build context is the repository root. Keep secrets, local state and personal
+# data out of it — the image only needs docker/, ironclaw/config.toml,
+# mcp-tls/certs/ca.crt, nginx/ and patches/.
+.env
+.env.*
+!.env.default
+.git
+.history
+ironclaw/workspace
+mcp-tls/certs/*
+!mcp-tls/certs/ca.crt

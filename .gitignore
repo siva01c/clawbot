@@ -24,3 +24,5 @@ ironclaw/workspace/USER.md
 ironclaw/workspace/skills/redmine-time-tracking/projects.md
 # Internal build roadmap — absolute local paths into private repos, auth routes, token names
 ironclaw/workspace/todo.md
+# Local Compose override — host-specific mounts (extra skills, site checkouts). Never commit.
+docker-compose.override.yml

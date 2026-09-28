@@ -5,7 +5,7 @@
 # Run this BEFORE `docker compose build ironclaw` — the Dockerfile COPYs
 # certs/ca.crt into the image's trust store, so the file has to exist.
 #
-#   sh clawbot/mcp-tls/gen-certs.sh
+#   sh mcp-tls/gen-certs.sh
 #
 # Re-running regenerates everything; the ironclaw image must then be rebuilt
 # so it trusts the new CA.

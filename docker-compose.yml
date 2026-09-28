@@ -1,34 +1,12 @@
 services:
-  hugo:
-    image: clawbot-ironclaw:latest
-    build:
-      context: ..
-      dockerfile: clawbot/docker/ironclaw/Dockerfile
-      args:
-        - TARGET_ENV=${TARGET_ENV:-dev}
-    working_dir: /site
-    command: ["sh", "-c", "hugo server -D --bind 0.0.0.0 --port 1313 --navigateToChanged"]
-    volumes:
-      - ../ludekkvapil:/site
-    ports:
-      - "${HUGO_DEV_PORT:-1313}:1313"
-      - "1314:1314"
-      - "1315:1315"
-      - "1316:1316"
-      - "1317:1317"
-      - "1318:1318"
-      - "1319:1319"
-      - "1320:1320"
-    networks:
-      - clawbot
-
   ironclaw-proxy:
-    image: nginx:alpine
+    image: clawbot-ironclaw-proxy:latest
+    build:
+      context: .
+      dockerfile: docker/ironclaw/Dockerfile
+      target: proxy
     ports:
       - "${OPENCLAW_PORT:-18790}:18790"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ../scratch-ironclaw-repo/crates/ironclaw_webui_v2_static/static/js/pages/logs:/nginx-logs:ro
     depends_on:
       - ironclaw
     networks:
@@ -52,21 +30,20 @@ services:
   ironclaw:
     image: clawbot-ironclaw:latest
     build:
-      context: ..
-      dockerfile: clawbot/docker/ironclaw/Dockerfile
+      context: .
+      dockerfile: docker/ironclaw/Dockerfile
+      target: runner
       args:
         - TARGET_ENV=${TARGET_ENV:-dev}
     env_file:
-      # Optional operator-wide env file shared by several stacks on one host.
-      - path: ../.env.shared
-        required: false
+      # Only this stack's own .env. ClawBot reaches every backend through the MCP
+      # gateway, so it needs no backend credentials.
       - .env
     volumes:
       - ironclaw-runtime:/root/.ironclaw/reborn
       - ./ironclaw:/ironclaw-src:ro
       - ./ironclaw/workspace:/root/.ironclaw/reborn/workspace
       - ./AGENTS.md:/root/.ironclaw/reborn/workspace/AGENTS.md:ro
-      - ../ludekkvapil:/site
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
@@ -89,7 +66,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - hugo
       - openclaw-sandbox-browser
       - mcp-tls
     networks:
