@@ -24,7 +24,7 @@ RUN git init -q . \
     && git -c advice.detachedHead=false checkout -q FETCH_HEAD
 
 COPY patches/ironclaw/ /patches/
-RUN for p in /patches/*.patch; do echo "Applying $p"; git apply --index "$p"; done
+RUN set -e; for p in /patches/*.patch; do echo "Applying $p"; git apply --index "$p"; done
 
 # --- Builder Stage ---
 FROM source AS builder
