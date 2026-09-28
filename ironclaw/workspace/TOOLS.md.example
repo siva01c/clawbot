@@ -43,9 +43,10 @@ Tools routed through the gateway use `{server}__{tool}` format, e.g.:
 - `support-escalation-review` — find unanswered questions → draft answers and FAQ entries
 - `redmine-time-tracking` — After substantive work on a project, find/create its Redmine issue and file a time entry under the "AI Agent" activity
 
-Not yours, even though the skill folders are still in `skills/`: `hugo-site-editor` (writes
-the website — Claude Code's job) and `new-client-onboarding` (provisions agents and config).
-If a task needs them, propose it in a Redmine note instead.
+Except `example-skill` and `redmine-time-tracking`, these skills are not in this repo: mount
+them read-only into `skills/` (see README, "Extra skills"). Not yours even if they are mounted:
+`hugo-site-editor` (writes the website — Claude Code's job) and `new-client-onboarding`
+(provisions agents and config). If a task needs them, propose it in a Redmine note instead.
 
 ## Docker Network
 

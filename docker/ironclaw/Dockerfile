@@ -1,5 +1,15 @@
-# --- Builder Stage ---
-FROM rust:1.92-bookworm AS builder
+# Build context: the repository root (see docker-compose.yml).
+
+# --- Source Stage ---
+# IronClaw is built from upstream nearai/ironclaw, pinned to one commit, plus the
+# local changes in patches/ironclaw/ (internal MCP gateway extension, no model
+# override when it names the configured model).
+# To move to a newer IronClaw: bump IRONCLAW_REF, rebuild, fix any patch that no
+# longer applies.
+FROM rust:1.92-bookworm AS source
+
+ARG IRONCLAW_REPO=https://github.com/nearai/ironclaw.git
+ARG IRONCLAW_REF=9b4fa6383ebfc8d927dd5cf948b264290faeb2c2
 
 RUN apt-get update && apt-get install -y \
     pkg-config \
@@ -7,9 +17,17 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy local nearai/ironclaw repository
-COPY scratch-ironclaw-repo /ironclaw
 WORKDIR /ironclaw
+RUN git init -q . \
+    && git remote add origin "$IRONCLAW_REPO" \
+    && git fetch -q --depth 1 origin "$IRONCLAW_REF" \
+    && git -c advice.detachedHead=false checkout -q FETCH_HEAD
+
+COPY patches/ironclaw/ /patches/
+RUN set -e; for p in /patches/*.patch; do echo "Applying $p"; git apply --index "$p"; done
+
+# --- Builder Stage ---
+FROM source AS builder
 
 # Build workspace in release mode
 RUN cargo build --release --workspace --features webui-v2-beta,slack-v2-host-beta,postgres
@@ -17,6 +35,13 @@ RUN cargo build --release --workspace --features webui-v2-beta,slack-v2-host-bet
 # Extract only executable binaries
 RUN mkdir -p /build-bin && \
     find target/release/ -maxdepth 1 -type f -executable -exec cp {} /build-bin/ \;
+
+# --- Proxy Stage ---
+# The ironclaw binary's embedded SPA lacks js/pages/logs/, so the proxy serves
+# that directory itself, straight from the patched source.
+FROM nginx:alpine AS proxy
+COPY --from=source /ironclaw/crates/ironclaw_webui_v2_static/static/js/pages/logs/ /nginx-logs/
+COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
 # --- Runner Stage ---
 FROM debian:bookworm-slim AS runner
@@ -26,7 +51,6 @@ RUN apt-get update && \
         curl \
         ca-certificates \
         git \
-        hugo \
         python3 \
         python3-pip \
         python3-venv && \
@@ -35,8 +59,8 @@ RUN apt-get update && \
 
 # Trust the internal MCP gateway's TLS CA. `ironclaw_network` builds reqwest
 # with `rustls-tls-native-roots`, so the system trust store is what it reads.
-# Generate the cert first: sh clawbot/mcp-tls/gen-certs.sh
-COPY clawbot/mcp-tls/certs/ca.crt /usr/local/share/ca-certificates/clawbot-mcp-ca.crt
+# Generate the cert first: sh mcp-tls/gen-certs.sh
+COPY mcp-tls/certs/ca.crt /usr/local/share/ca-certificates/clawbot-mcp-ca.crt
 RUN update-ca-certificates
 
 # Copy compiled binaries from builder stage
@@ -50,8 +74,8 @@ RUN mkdir -p /root/.ironclaw/reborn
 WORKDIR /root/.ironclaw/reborn
 
 # Copy startup configurations and scripts
-COPY clawbot/ironclaw/config.toml /root/.ironclaw/reborn/config.toml
-COPY clawbot/docker/ironclaw/start.sh /usr/local/bin/start-ironclaw.sh
+COPY ironclaw/config.toml /root/.ironclaw/reborn/config.toml
+COPY docker/ironclaw/start.sh /usr/local/bin/start-ironclaw.sh
 RUN chmod +x /usr/local/bin/start-ironclaw.sh
 
 EXPOSE 18789
