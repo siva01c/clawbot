@@ -1,0 +1,87 @@
+diff --git a/crates/ironclaw_llm/src/rig_adapter.rs b/crates/ironclaw_llm/src/rig_adapter.rs
+index 1ac5da23b..4e88a5aea 100644
+--- a/crates/ironclaw_llm/src/rig_adapter.rs
++++ b/crates/ironclaw_llm/src/rig_adapter.rs
+@@ -785,10 +785,29 @@ fn build_rig_request(
+ /// handling of duplicate JSON keys (most Python/Go servers use last-key-wins,
+ /// but this is not guaranteed by the JSON spec). The `effective_model_name()`
+ /// trait method should be consulted to determine the model actually used.
+-fn inject_model_override(rig_req: &mut RigRequest, model_override: Option<&str>) {
++fn inject_model_override(rig_req: &mut RigRequest, model_override: Option<&str>, base_model: &str) {
+     let Some(model) = model_override else {
+         return;
+     };
++
++    // Normalize both model names by converting to lowercase and stripping common prefixes
++    let normalize = |name: &str| -> String {
++        let name = name.to_lowercase();
++        if let Some(rest) = name.strip_prefix("openai/") {
++            rest.to_string()
++        } else if let Some(rest) = name.strip_prefix("ollama/") {
++            rest.to_string()
++        } else if let Some(rest) = name.strip_prefix("anthropic/") {
++            rest.to_string()
++        } else {
++            name
++        }
++    };
++
++    if normalize(model) == normalize(base_model) {
++        return;
++    }
++
+     match rig_req.additional_params {
+         Some(ref mut params) => {
+             if let Some(obj) = params.as_object_mut() {
+@@ -863,7 +882,7 @@ where
+         )?;
+ 
+         merge_additional_params(&mut rig_req, self.default_additional_params.as_ref());
+-        inject_model_override(&mut rig_req, model_override.as_deref());
++        inject_model_override(&mut rig_req, model_override.as_deref(), &self.model_name);
+ 
+         let response = self
+             .model
+@@ -925,7 +944,7 @@ where
+         )?;
+ 
+         merge_additional_params(&mut rig_req, self.default_additional_params.as_ref());
+-        inject_model_override(&mut rig_req, model_override.as_deref());
++        inject_model_override(&mut rig_req, model_override.as_deref(), &self.model_name);
+ 
+         let response = self
+             .model
+@@ -2758,7 +2777,7 @@ mod tests {
+     #[test]
+     fn test_inject_model_override_creates_params_when_none() {
+         let mut req = make_rig_request(None);
+-        inject_model_override(&mut req, Some("test-model"));
++        inject_model_override(&mut req, Some("test-model"), "base-model");
+ 
+         let params = req
+             .additional_params
+@@ -2771,7 +2790,7 @@ mod tests {
+         let mut req = make_rig_request(Some(serde_json::json!({
+             "cache_control": { "type": "ephemeral" },
+         })));
+-        inject_model_override(&mut req, Some("override-model"));
++        inject_model_override(&mut req, Some("override-model"), "base-model");
+ 
+         let params = req.additional_params.expect("should remain Some");
+         let obj = params.as_object().expect("should be object");
+@@ -2785,7 +2804,14 @@ mod tests {
+     #[test]
+     fn test_inject_model_override_noop_when_none() {
+         let mut req = make_rig_request(None);
+-        inject_model_override(&mut req, None);
++        inject_model_override(&mut req, None, "base-model");
++        assert!(req.additional_params.is_none());
++    }
++
++    #[test]
++    fn test_inject_model_override_noop_when_equal() {
++        let mut req = make_rig_request(None);
++        inject_model_override(&mut req, Some("openai/gpt-5"), "gpt-5");
+         assert!(req.additional_params.is_none());
+     }
+ 

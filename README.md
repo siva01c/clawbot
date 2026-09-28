@@ -73,12 +73,12 @@ IronClaw runtime state, including session history, is stored in the named Docker
 
 The image is built from upstream [nearai/ironclaw](https://github.com/nearai/ironclaw), pinned to one commit (`IRONCLAW_REF` in `docker/ironclaw/Dockerfile`), with the local changes in `patches/ironclaw/` applied on top:
 
-- the internal MCP gateway extension (`CLAWBOT_MCP_GATEWAY_URL` + `MCP_GATEWAY_TOKEN`),
-- the web UI logs page.
+- `0001-internal-mcp-gateway.patch` — the internal MCP gateway extension (`CLAWBOT_MCP_GATEWAY_URL` + `MCP_GATEWAY_TOKEN`); a tool description that fails the model-safety check is replaced with a neutral one instead of failing every turn,
+- `0002-skip-redundant-model-override.patch` — no per-request model override when it names the configured model (`openai/gpt-5` = `gpt-5`).
 
 To move to a newer IronClaw, bump `IRONCLAW_REF` and rebuild. If a patch no longer applies, rebase it on the new commit and regenerate it with `git diff`.
 
-The proxy image (`target: proxy`) serves the web UI's `js/pages/logs/` directory, which the ironclaw binary does not embed.
+The proxy image (`target: proxy`) serves the web UI's `js/pages/logs/` directory from the IronClaw source, because the binary's embedded SPA does not include it.
 
 The stack joins the external Docker network `agentic-ops`, where the MCP gateway runs. Create it (`docker network create agentic-ops`) if you run ClawBot without one.
 

@@ -2,7 +2,8 @@
 
 # --- Source Stage ---
 # IronClaw is built from upstream nearai/ironclaw, pinned to one commit, plus the
-# local changes in patches/ironclaw/ (internal MCP gateway extension, logs page).
+# local changes in patches/ironclaw/ (internal MCP gateway extension, no model
+# override when it names the configured model).
 # To move to a newer IronClaw: bump IRONCLAW_REF, rebuild, fix any patch that no
 # longer applies.
 FROM rust:1.92-bookworm AS source

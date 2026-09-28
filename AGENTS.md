@@ -90,7 +90,7 @@ docker compose logs -f ironclaw
 | `ironclaw/workspace/**` (skills, identity, config) | `docker compose restart ironclaw` |
 | `ironclaw/config.toml` | `docker compose restart ironclaw` |
 | `docker/ironclaw/start.sh` | `docker compose build ironclaw && docker compose up -d` |
-| `docker/ironclaw/Dockerfile`, `patches/ironclaw/*` | `docker compose build && docker compose up -d` |
+| `docker/ironclaw/Dockerfile`, `patches/ironclaw/*`, `nginx/nginx.conf` | `docker compose build && docker compose up -d` (nginx.conf is baked into the proxy image — a restart does not pick it up) |
 | `docker-compose.yml` | `docker compose up -d` |
 
 ---
